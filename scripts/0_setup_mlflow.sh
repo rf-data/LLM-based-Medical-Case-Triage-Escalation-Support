@@ -3,25 +3,34 @@
 # exit on error
 set -e
 
-# echo "DEBUG: SCRIPT REACHED"
-
-# define paths
+# ----------------------------
+# Paths & logging
+# ----------------------------
 PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
 
 mkdir -p "$PROJECT_ROOT/logs"
 LOGFILE="$PROJECT_ROOT/logs/0_mlflow.log"
 
-# import env variables from .env
+# ----------------------------
+# Load environment variables
+# ----------------------------
 {
+  echo ""
+  echo "===== START MLFLOW_SERVER_SETUP [$(date '+%Y-%m-%d %H:%M:%S')] ===="
   if [ -f "$PROJECT_ROOT/.env" ]; then
-      echo "Loading environment variables from ../.env"
-      set -o allexport
-      source "$PROJECT_ROOT/.env"
-      set +o allexport
+    echo "Loading environment variables from ../.env"
+    set -o allexport
+    source "$PROJECT_ROOT/.env"
+    set +o allexport
+  else
+    echo ""
+    echo "No .env file found - relying on defaults"  
   fi
 } >> "$LOGFILE" 2>&1
 
-# Fallback falls kein .env vorhanden
+# ----------------------------
+# Defaults (only for SERVER)
+# ----------------------------
 MLFLOW_DB=${MLFLOW_DB:-"sqlite:///mlflow/mlflow.db"} 
 ARTIFACT_DIR=${MLFLOW_ARTIFACTS:-"./mlflow/artifacts"}
 
@@ -29,10 +38,10 @@ ARTIFACT_DIR=${MLFLOW_ARTIFACTS:-"./mlflow/artifacts"}
 short_db=$(echo "$MLFLOW_DB" | awk -F'/' '{print $(NF-2)"/"$(NF-1)"/"$NF}')
 short_artifacts=$(echo "$ARTIFACT_DIR" | awk -F'/' '{print $(NF-1)"/"$NF}')
 
-# run script
+# ----------------------------
+# Start MLflow server
+# ----------------------------
 {
-  echo ""
-  echo "===== START MLFLOW_SERVER_SETUP [$(date '+%Y-%m-%d %H:%M:%S')] ===="
   echo "DB: .../$short_db"
   echo "Artifacts: .../$short_artifacts"
 
@@ -45,31 +54,53 @@ short_artifacts=$(echo "$ARTIFACT_DIR" | awk -F'/' '{print $(NF-1)"/"$NF}')
      >> "$LOGFILE" 2>&1 &
   
   echo "MLflow server started with PID $!"
-  echo ""
   echo "===== END MLFLOW_SERVER_SETUP [$(date '+%Y-%m-%d %H:%M:%S')] ===="
-}
+} >> "$LOGFILE" 2>&1
+
+# ----------------------------
+# Wait until server is ready
+# ----------------------------
 {
   echo ""
   echo "===== START MLFLOW_SERVER_CHECK [$(date '+%Y-%m-%d %H:%M:%S')] ===="
-  echo "WAIT....."
-  # 1. Server läuft?
-  until curl -sf http://127.0.0.1:5000/api/2.0/mlflow/experiments/list > /dev/null; do
-    sleep 1
-  done
+  echo "Waiting for MLflow server to become available..."
+  
+  until ss -ltn | grep -q ':5000'; do sleep 1; done
+  echo ""
+  echo "Port is open."
+  echo ""
+  until curl -sf http://127.0.0.1:5000/ > /dev/null; do sleep 1; done
+  echo "HTTP/API has been reached."
+  # until curl -sf http://127.0.0.1:5000/api/2.0/mlflow/experiments/list > /dev/null; do
+  #   sleep 1
+  # done
+  
   echo "MLflow server is ready"
-  
-  echo "Check #1: Python test script:"
+} >> "$LOGFILE" 2>&1
+
+# ----------------------------
+# Check 1: Python test module
+# ----------------------------
+{
+  echo ""
+  echo "Check #1: Python test module (src.mlflow_setup_test)"
   python3 -m src.mlflow_setup_test
+} >> "$LOGFILE" 2>&1
+
+# ----------------------------
+# Check 2: Raw Python URI check
+# ----------------------------
+{
   echo ""
-  
-  
-  # curl http://127.0.0.1:5000/api/2.0/mlflow/experiments/list
+  echo "Check #2: Raw Python tracking URI"
+} >> "$LOGFILE" 2>&1
+
+python - <<'EOF' >> "$LOGFILE" 2>&1
+import mlflow
+print("Tracking URI =", mlflow.get_tracking_uri())
+EOF
+
+{
   echo ""
-  echo "Check #2: Retrieve URI by shell command"
-  python - <<'EOF' 
-  import mlflow
-  print('URI =', mlflow.get_tracking_uri())
-  EOF  
-  echo ""
-  echo "===== END MLFLOW_SERVER_CHECK [$(date '+%Y-%m-%d %H:%M:%S')] ===="
-}  >> "$LOGFILE" 2>&1
+  echo "===== END MLFLOW_SERVER_CHECK [$(date '+%Y-%m-%d %H:%M:%S')] ====="
+} >> "$LOGFILE" 2>&1

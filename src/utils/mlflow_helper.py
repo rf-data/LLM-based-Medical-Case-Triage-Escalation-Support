@@ -127,6 +127,8 @@ def mlflow_logging(log_dict): #, mode="baseline"):
     # artifacts (file path, dataset, logic, red flags, ...) 
     fn = log_dict["df_fn"]
     fn_path = log_dict["file_name_df_fn"]
+    
+    gh.ensure_dir(fn_path)
     fn.to_csv(fn_path, index=False)
 
     logger.log_artifact(fn_path)
@@ -194,5 +196,4 @@ mlflow.set_tag("approach", "rule_based")
 mlflow.set_tag("dataset", "ambiguous")
 mlflow.set_tag("stage", "baseline")
 mlflow.set_tag("owner", "robfra")
-
 """

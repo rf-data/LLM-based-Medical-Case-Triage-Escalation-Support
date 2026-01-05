@@ -49,7 +49,7 @@ Clinical report:
             data = json.loads(content)
 
             escalation = bool(data["escalation_required"])
-            uncertainty = 
+            uncertainty = str(data["uncertainty_level"]) 
             confidence = float(data["confidence"])
 
             if not isinstance(data["escalation_required"], 
@@ -64,7 +64,11 @@ Clinical report:
                 "content": "Return VALID JSON ONLY. No text. No comments."
                     })
 
-    return True
+    return {
+        "escalation_required": True,
+        "confidence": 0.0,
+        "uncertainty_level": "unknown"
+            }
 
     #         all_llm(report_text)
 

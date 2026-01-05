@@ -1,6 +1,16 @@
 # imports
 from dotenv import load_dotenv, find_dotenv
 import subprocess
+from pathlib import Path
+from typing import Union
+
+def ensure_dir(f_path: Union[str | Path]) -> Path:
+    p = Path(f_path)
+    
+    target_dir = p.parent if p.suffix else p 
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    return p
 
 
 def load_env_vars():

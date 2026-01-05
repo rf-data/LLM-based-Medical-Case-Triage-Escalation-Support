@@ -26,16 +26,32 @@ from src.utils.red_flags import RED_FLAGS
     default=False,
     help="Enable MLflow logging"
 )
-def create_report(f_path=None, mode="llm", logging=False):
+def create_report(data="ambiguous", mode="llm", logging=False):
     # configurations
-    version = "v1"
+    vers_run = "v1"
+    vers_data = "v1"
+    vers_logic = "v1"
+    vers_flags = "v1"
+    vers_prompt = "v1"
+    vers_values = "v1"
+    vers_json = "v1"
 
-    if not f_path:
-        gh.load_env_vars()
-        f_path=Path(os.getenv("AMBIGUOUS_DATA"))
+    # load env variable
+    gh.load_env_vars()
+
+    if data == "ambiguous":
+        f_path = Path(os.getenv("AMBIGUOUS_DATA"))
+        f_name = "data/data_generic/reports_ambiguous.csv" 
+
+    elif data == "clear":
+        f_path = Path(os.getenv("CLEAR_DATA"))
+        f_name = "data/data_generic/reports_clear.csv"
+
+    elif isinstance(data, Path):
+        f_path = Path(data)
 
     # loading texts as df --> fct file load
-    df = pd.read_csv(f_path)
+    df = pd.read_csv(f_path, index_col="Unnamed: 0")
     
     if mode == "baseline":  # LLM
        fct_escalate = baseline_escalation
@@ -43,47 +59,49 @@ def create_report(f_path=None, mode="llm", logging=False):
     elif mode == "llm":
         fct_escalate = llm_escalation
 
+        UNCERTAINTY_TO_CONF = {
+                        "low": 0.85,
+                        "medium": 0.6,
+                        "high": 0.3,
+                    }
+
     else:
         print(f"Unknown mode: {mode}")
+        return 
 
     y_true = df["escalation_required"]
 
     start = time.perf_counter()
     result = df["report_text"].apply(fct_escalate)
     elapsed = time.perf_counter() - start
+    
+    result_df = pd.DataFrame(result.tolist())
 
-    df[f"pred_{mode}_{version}"] = result["escalation_required"]
-    
     if mode == "llm":
-        UNCERTAINTY_TO_CONF = {
-                        "low": 0.85,
-                        "medium": 0.6,
-                        "high": 0.3,
-                    }
-        
-        df[f"confidence_llm_{version}"] = result["confidence"]
-        df[f"uncertainty_llm_{version}"] = result["uncertainty_level"]
-        df[f"confidence_derived_llm_{version}"] = UNCERTAINTY_TO_CONF[result["uncertainty_level"]]
+        df[f"pred_{mode}_{vers_run}"] = result_df["escalation_required"]
+        df[f"confidence_llm_{vers_run}"] = result_df["confidence"]
+        df[f"uncertainty_llm_{vers_run}"] = result_df["uncertainty_level"]
+        df[f"confidence_derived_llm_{vers_run}"] = (
+                                        result_df["uncertainty_level"]
+                                        .map(UNCERTAINTY_TO_CONF)
+                                                    )
     
+    if mode == "baseline":
+        df[f"pred_{mode}_{vers_run}"] = result
+
     # save df
     df.to_csv(f_path)
 
-    false_negatives = df[
-            (df["escalation_required"] == True) &
-            (df[f"pred_{mode}_{version}"] == False)
-        ]
-    # false_negatives.to_csv(
-    #         "analysis/false_negatives_llm_v1.csv",
-    #         index=False
-    #     )
-
-    # logger.log_artifact("analysis/false_negatives_llm_v1.csv")
-
+    # (1)standardisierten Evaluation-Pipeline (DataFrame → Metrics)
+    # alle nachfolgenden SChritte pro Subgruppe dann psyche vs Körper, clear vs ambiguous 
+    # (2) Error-Bucket-Analyse
+    # false_negatives = df[
+    #         (df["escalation_required"] == True) &
+    #         (df[f"pred_{mode}_{vers_run}"] == False)
+    #     ]
     
-    
-
     # create ClassReport
-    y_pred = df[f"pred_{mode}_{version}"]
+    y_pred = df[f"pred_{mode}_{vers_run}"]
 
     report = classification_report(y_true, 
                                    y_pred, 
@@ -121,45 +139,49 @@ def create_report(f_path=None, mode="llm", logging=False):
         # "tracking_uri": os.getenv(""),
         "artifacts_location": os.getenv("MLFLOW_ARTIFACTS"),
         "git_commit": gh.get_git_commit(), 
-        "run_name": f"{now}_LLM",
-        "approach": "LLM (openAI)",
-        "version_approach": f"{version}",
+        "run_name": f"{now}_{mode}",
+        "approach": "{mode}",
+        "version_approach": f"{vers_run}",
 
         # data
         "file_path_data": f_path, 
-        "file_name_data": "data_generic/reports_ambiguous.csv", 
-        "name_dataset": "ambiguous",
+        "file_name_data": f_name, 
+        "name_dataset": data,
         "source_dataset": "synthetic",
         "size_dataset": len(df), 
-        "version_dataset": "v1",
+        "version_dataset": vers_data,
 
         # logic, red_flags,...
-        "file_name_logic": f"logic/{version}/{mode}.txt",
+        "file_name_logic": f"logic/{vers_logic}/{mode}.txt",
         "logic": fct_escalate, 
-        # "file_name_red_flags": "red_flags/version_1.json",
-        # "red_flags": RED_FLAGS,
-        "file_name_prompt": f"prompts/{version}/system_prompt.txt", 
-        "prompt": prompt_v1.strip(),
-        "file_name_values": f"prompts/{version}/allowed_values.txt",
-        "allowed_values": allowed_values_v1.strip(),
-        "file_name_json_scheme": f"json_scheme/{version}.json",
-        "json_scheme": scheme_v1,
-        
+
         # metrics
         "runtime_total_sec": elapsed,
         "runtime_per_sample_sec": (elapsed / len(df)),
         "class_report": report,
         "confusion_matrix": cm, 
         "class_metrics": metrics,
-        "file_name_df_fn": f"analysis/false_negatives_{mode}_{version}.csv",
+        "file_name_df_fn": f"mlflow/evaluation/false_negatives_{mode}_{vers_run}.csv",
         "df_fn": false_negatives, 
 
         # comments and notes
         "notes": [
-            # "known_limitation -- Baseline matches synthetic dataset features; expected to fail on ambiguous cases",
-            # "Recall undefined for classes with no true samples; zero_division=0 applied"
+            "known_limitation -- Baseline matches synthetic dataset features; expected to fail on ambiguous cases",
+            "Recall undefined for classes with no true samples; zero_division=0 applied"
                 ]
                 }
+
+    if mode == "baseline":
+        log_dict["file_name_red_flags"] = f"red_flags/{vers_flags}.json"
+        log_dict["red_flags"] = RED_FLAGS
+        
+    if mode == "llm":
+        log_dict["file_name_prompt"] = f"prompts/{vers_prompt}/system_prompt.txt"
+        log_dict["prompt"] = prompt_v1.strip()
+        log_dict["file_name_values"] = f"prompts/{vers_values}/allowed_values.txt"
+        log_dict["allowed_values"] = allowed_values_v1.strip()
+        log_dict["file_name_json_scheme"] = f"json_scheme/{vers_json}.json"
+        log_dict["json_scheme"] = scheme_v1      
 
     if logging:
         mlflow_logging(log_dict)
