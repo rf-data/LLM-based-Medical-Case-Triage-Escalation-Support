@@ -1,0 +1,5 @@
+outs:
+- md5: 69f41fbcf6a4213803946a63ad03eb79
+  size: 11296
+  hash: md5
+  path: reports_clear.json

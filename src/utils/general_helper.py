@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from typing import Union
 
+
 def ensure_dir(f_path: Union[str | Path]) -> Path:
     p = Path(f_path)
     
@@ -11,6 +12,11 @@ def ensure_dir(f_path: Union[str | Path]) -> Path:
     target_dir.mkdir(parents=True, exist_ok=True)
 
     return p
+
+
+def iter_chunks(df, chunk_size=25):
+    for start in range(0, len(df), chunk_size):
+        yield df.iloc[start : start + chunk_size]
 
 
 def load_env_vars():
@@ -32,6 +38,8 @@ def load_env_vars():
     #     print("Variables from .env.session loaded")
     
     # session.env_loaded = True
+
+
 
 def get_git_commit():
     try:

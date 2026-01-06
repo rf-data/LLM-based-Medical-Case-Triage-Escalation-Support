@@ -1,6 +1,6 @@
 
 scheme_v1 = {
-          "escalation_required": True,
+          "expected_action": True,
           "severity": "low",            # | medium | high",
           "risk_factors": [],           # "string"
           "uncertainty_level": "low",   #  | medium | high",

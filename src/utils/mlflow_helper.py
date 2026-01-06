@@ -125,13 +125,13 @@ def mlflow_logging(log_dict): #, mode="baseline"):
                      log_dict["version_dataset"])
 
     # artifacts (file path, dataset, logic, red flags, ...) 
-    fn = log_dict["df_fn"]
-    fn_path = log_dict["file_name_df_fn"]
+    # fn = log_dict["df_fn"]
+    # fn_path = log_dict["file_name_df_fn"]
     
-    gh.ensure_dir(fn_path)
-    fn.to_csv(fn_path, index=False)
+    # gh.ensure_dir(fn_path)
+    # fn.to_csv(fn_path, index=False)
 
-    logger.log_artifact(fn_path)
+    # logger.log_artifact(fn_path)
     logger.log_text(
         log_dict["file_name_logic"], 
         inspect.getsource(log_dict["logic"])
@@ -175,10 +175,11 @@ def mlflow_logging(log_dict): #, mode="baseline"):
                 json.dumps(report, indent=2)
             )
     logger.log_metric("precision", precision)
-    logger.log_metric("precision_true", report["True"]["precision"])
+    logger.log_metric("precision_escalation", 
+                      report["escalation"]["precision"])
     logger.log_metric("recall", recall)
     logger.log_metric("recall_escalation", 
-                      report["True"]["recall"])
+                      report["escalation"]["recall"])
     logger.log_metric("f1", f1)
     logger.log_metric("true_negatives", tn)
     logger.log_metric("true_positives", tp)
