@@ -13,6 +13,12 @@ ROOT := $(CURDIR)
 # repo_push:
 # 	bash "${ROOT}/scripts/0_repo_push.sh" 
 
+req_files:
+	uv pip compile pyproject.toml -o requirements.txt
+	uv pip compile pyproject.toml --group mlops -o requirements-mlops.txt
+	uv pip compile pyproject.toml --group heavy -o requirements-heavy.txt
+	uv pip compile pyproject.toml --group mlops --group heavy --group dev  -o requirements-dev.txt
+
 mlflow:
 	${ROOT}/scripts/0_setup_mlflow.sh
 

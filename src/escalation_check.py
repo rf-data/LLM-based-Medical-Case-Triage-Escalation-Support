@@ -2,6 +2,7 @@
 # imports
 from datetime import datetime
 import time
+import mlflow
 import os
 from pathlib import Path
 import pandas as pd
@@ -13,7 +14,7 @@ from sklearn.metrics import (precision_recall_fscore_support,
 import src.utils.general_helper as gh
 import src.utils.escalation_helper as eh
 from src.utils.escalation_baseline import baseline_escalation
-# from src.utils.escalation_llm import llm_escalation
+from src.utils.escalation_llm import llm_escalation_batch
 from src.utils.prompt import prompt_v1, allowed_values_v1
 from src.utils.json_scheme import scheme_v1
 
@@ -48,7 +49,8 @@ def get_data_df(data, log_dict):
     df = pd.read_csv(f_path, 
                      # index_col="Unnamed: 0"
                      )
-    
+    print(f"df check -- head:\n{df.head(2)}\n")
+    # print(f"")
     # logging
     log_dict["file_name_data"] = f_name
     log_dict["file_path_data"] = f_path
@@ -132,11 +134,23 @@ def case_escalation(df_input, mode, config, log_dict, save_df=True):
     log_dict["run_name"] = f"{now}_{mode}"
     log_dict["runtime_total_sec"] = elapsed
     log_dict["runtime_per_sample_sec"] = (elapsed / len(df))
-    log_dict["logic"] = fct_escalate
 
+    if mode == "llm": 
+        func_name, dep_func = config.get("dependent_function", (None, None))
+        snapshots = gh.snapshot_dependent_functions(fct_escalate,
+                                                dependencies=[dep_func])
+        log_dict["logic"] = [snapshots, 
+                             ("root", snapshots["root"]), 
+                             (f"{func_name}", snapshots["dependencies"][f"{func_name}"])]
+
+    else:
+        snapshot_dict = gh.snapshot_single_function(fct_escalate)
+        log_dict["logic"] = snapshot_dict
+                            
+                        
     result_df = pd.DataFrame(all_results)
-    print(f"[DEBUG] columns:\n{result_df.columns}")
-    print(f"[DEBUG] head:\n{result_df.head()}")
+    # print(f"[DEBUG] columns:\n{result_df.columns}")
+    # print(f"[DEBUG] head:\n{result_df.head()}")
 
     if mode == "llm":
         df[f"pred_{mode}_{config["vers_run"]}"] = result_df["expected_action"]
@@ -152,11 +166,16 @@ def case_escalation(df_input, mode, config, log_dict, save_df=True):
 
     # save df
     if save_df == True:
-        f_path = os.getenv("")
+        folder = Path(os.getenv("PROCESSED"))
+        gh.ensure_dir(folder)
+        f_path = folder / f"{now}_reports_{mode}_{config["vers_run"]}.csv"
+
         df.to_csv(f_path)
 
     if isinstance(save_df, Path):
         f_path = Path(save_df)
+        gh.ensure_dir(f_path)
+
         df.to_csv(f_path)
 
     return df, log_dict
@@ -246,11 +265,12 @@ def escalation_check(data="version_2", mode="llm", logging=False):
         "namespace":"llm_batch_v1",  
         "vers_run": "v1",
         "vers_data": "v2",
-        "vers_logic": "v1",
+        "vers_logic": "v1_5",
         "vers_flags": "v1",
         "vers_prompt": "v1",
         "vers_values": "v1",
         "vers_json": "v1",
+        "dependent_function": ("llm_escalation_batch", llm_escalation_batch)
         }
     
     log_dict = {
@@ -261,7 +281,7 @@ def escalation_check(data="version_2", mode="llm", logging=False):
         "git_commit": gh.get_git_commit(), 
         "approach": f"{mode} (batch_size=5)",
         "version_approach": f"{config["vers_run"]}",
-        "version_dataset": config["vers_data"],
+        "version_dataset": config["vers_data"]
     }
 
     if mode == "baseline":
@@ -280,16 +300,27 @@ def escalation_check(data="version_2", mode="llm", logging=False):
     df, log_dict = get_data_df(data, log_dict)  # --> funktion definieren
 
     df, log_dict = case_escalation(df, mode, config, log_dict)
-    log_dict["file_name_logic"] = f"logic/{config["vers_logic"]}/{mode}.txt"
+    log_dict["file_name_logic"] = f"logic/{config["vers_logic"]}"
 
     log_dict = evaluate_escalation(df, mode, config, log_dict)
 
-    log_dict["notes"] = (
-            "known_limitation -- Baseline matches synthetic dataset features; expected to fail on ambiguous cases",
-            "Recall undefined for classes with no true samples; zero_division=0 applied"
-                )
+    # log_dict["notes"] = (
+    #         "known_limitation -- Baseline matches synthetic dataset features; expected to fail on ambiguous cases",
+    #         "Recall undefined for classes with no true samples; zero_division=0 applied"
+    #             )
     
+    # run_id = "fa5f4e86a14f47d581d0c9c314f6829a"
+    # code = log_dict["logic"]["code"]
+    # fn_path = log_dict["file_name_logic"]
+
+    # with mlflow.start_run(run_id=run_id):
+    #     mlflow.log_text(code, f"{fn_path}/logic_snapshot.py")
+    #     print("SUCCESS")
+
     if logging:
+        log_path = Path(os.getenv("PATH_LOGDICT"))
+        gh.save_dict(log_path, log_dict)
+
         mlflow_logging(log_dict)
 
 

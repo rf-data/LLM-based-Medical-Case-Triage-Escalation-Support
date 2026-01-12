@@ -1,0 +1,26 @@
+##############################################################################
+# FastAPI or BentoML Service
+###############################################################################
+services:  
+  fastapi:
+    build: ./fastapi
+    container_name: fastapi
+    ports:
+      - "8001:8001"
+    depends_on:
+      - mlflow
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    restart: always
+
+# Alternative:
+#  bentoml:
+#    image: bentoml/bento-server:latest
+#    container_name: bentoml
+#    ports:
+#      - "3000:3000"
+#    volumes:
+#      - ./bento:/bento
+#    command: bentoml serve /bento --host 0.0.0.0 --port 3000
+
+###############################################################################

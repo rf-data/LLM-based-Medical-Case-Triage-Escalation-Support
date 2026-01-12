@@ -4,9 +4,64 @@ import os
 from pathlib import Path 
 import mlflow
 import json
-import inspect
+# import inspect
+from mlflow.tracking import MlflowClient
 
 import src.utils.general_helper as gh
+
+
+def create_mlflow_client():
+    # configuration - initial setup
+    gh.load_env_vars()
+    database = os.getenv("MLFLOW_TRACKING_URI")
+    mlflow.set_tracking_uri(database) 
+
+    client = MlflowClient()
+
+    return client
+
+
+def create_mlflow_fingerprint(client, 
+                              exp_name=None, 
+                              run_name=None,
+                              artifact_location=None):
+    gh.load_env_vars()
+    if not artifact_location:
+        artifact_location = os.getenv("MLFLOW_ARTIFACTS")
+
+    if not exp_name:
+        exp_name = os.getenv("")
+
+    if not run_name:
+        run_name = os.getenv("")
+
+    client.create_experiment(
+                    name=run_name,
+                    artifact_location=str(artifact_location)
+                                    )
+
+    client.set_experiment(exp_name)
+
+    print(f"Created fingerprint experiment ('{exp_name}') and run ('{run_name}')")
+    print(f"Use {gh.shorten_path(artifact_location, 3)} as artifact location. ")
+
+
+def mlflow_fingerprint_check(
+    client: MlflowClient,
+    experiment_name="_mlflow_fingerprint",
+):
+    exp = client.get_experiment_by_name(experiment_name)
+    assert exp is not None, f"Fingerprint experiment '{experiment_name}' not found"
+
+    runs = client.search_runs(
+        experiment_ids=[exp.experiment_id],
+        filter_string="tags.fingerprint = 'true'",
+        max_results=1,
+    )
+
+    assert len(runs) > 0, "Fingerprint run not found"
+
+    print(f"[FINGERPRINT CHECK] --> SUCCESS: MLflow fingerprint run has {len(runs)} runs.")
 
 
 @dataclass
@@ -19,9 +74,13 @@ class ExperimentLogger:
     metrics: Dict[str, float] = field(default_factory=dict)
     artifacts: List[str] = field(default_factory=list)
     texts: Dict[str, str] = field(default_factory=dict)
+    # dicts: Dict[str, str] = field(default_factory=dict)
 
     def log_artifact(self, path: str):
         self.artifacts.append(path)
+
+    def log_dict(self, key: str, value: str):
+        self.dicts[key] = value
 
     def log_metric(self, key: str, value: float):
         self.metrics[key] = value
@@ -132,14 +191,43 @@ def mlflow_logging(log_dict): #, mode="baseline"):
     # fn.to_csv(fn_path, index=False)
 
     # logger.log_artifact(fn_path)
+    fn_path = log_dict["file_name_logic"]
+    logic = log_dict["logic"]
+
+    if isinstance(logic, list) and len(logic)==3:
+        complete, root, dependent = logic
+        _, snapshot_root = root
+        
+        func_name, snapshot_dependent = dependent
+        code_hashed = snapshot_dependent["sha256"]
+        code = snapshot_dependent["source"]
+
+        logger.log_text(f"{fn_path}/logic_root.py",
+                    snapshot_root["source"]) 
+    
+    elif isinstance(logic, dict) and len(logic)==1:
+        complete = logic
+        func_name = logic["name"] 
+        code_hashed = logic["sha256"]
+        code = logic["source"]
+
+    else: 
+        print(f"[ERROR] log_dict['logic'] must contain 1 dict or a list of 3 tuples -- here: {len(log_dict["logic"])} elements of type {[(i, type(e).__name__) for (i, e) in enumerate(log_dict["logic"])]}")
+    logger.set_tag(f"{fn_path}/func_name", func_name)
+    logger.set_tag(f"{fn_path}/code_hashed", code_hashed)
+    logger.log_text(f"{fn_path}/logic_escalation.py",
+                    code)  
     logger.log_text(
-        log_dict["file_name_logic"], 
-        inspect.getsource(log_dict["logic"])
-                    )
+                f"{fn_path}/logic_complete.json",
+                json.dumps(complete,
+                        indent=2, ensure_ascii=False)
+                        )
+    
+    
     if "red_flags" in log_dict.keys():
         logger.log_text(
-                log_dict["file_name_red_flags"], 
-                json.dumps(log_dict["red_flags"], 
+                log_dict["file_name_red_flags"],
+                json.dumps(log_dict["red_flags"],
                         indent=2, ensure_ascii=False)
                         )
     if "prompt" in log_dict.keys():
@@ -187,7 +275,8 @@ def mlflow_logging(log_dict): #, mode="baseline"):
     logger.log_metric("false_positives", fp)
 
     # logging additional infos
-    logger.log_param("additional_infos", log_dict["notes"])
+    if "notes" in log_dict.keys():
+        logger.log_param("additional_infos", log_dict["notes"])
     
     # execute logging
     logger.flush(log_dict["run_name"])

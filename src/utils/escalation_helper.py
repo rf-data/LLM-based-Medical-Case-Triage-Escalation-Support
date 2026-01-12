@@ -7,6 +7,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.utils.escalation_llm import llm_escalation_single, llm_escalation_batch
+import src.utils.general_helper as gh
 
 # import threading
 from openai import OpenAI
@@ -32,9 +33,10 @@ def make_cache_key(report_text: str,
 def load_from_cache(key: str, cache_dir: Path=None):
     if not cache_dir:
         cache_dir = Path(os.getenv("CACHE_DIR"))
-        cache_dir.mkdir(exist_ok=True, parents=True)
     
     fn = cache_dir / f"{key}.json"
+    gh.ensure_dir(fn)
+    
     if fn.exists():
         with open(fn) as f:
             return json.load(f)
@@ -43,9 +45,10 @@ def load_from_cache(key: str, cache_dir: Path=None):
 def save_to_cache(key: str, data: dict, cache_dir: Path=None):
     if not cache_dir:
         cache_dir = Path(os.getenv("CACHE_DIR"))
-        cache_dir.mkdir(exist_ok=True, parents=True)
 
     fn = cache_dir / f"{key}.json"
+    gh.ensure_dir(fn)
+    
     with open(fn, "w") as f:
         json.dump(data, f, indent=2)
     
