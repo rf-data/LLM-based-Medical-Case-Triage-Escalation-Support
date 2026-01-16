@@ -1,0 +1,79 @@
+# Was ist **cloud-init / user-data** – und wofür brauchst du es?
+
+### Kurzfassung
+> **cloud-init ist die maschinelle Wahrheit.**  
+> Es ist Code, der **beim ersten Start der EC2 automatisch ausgeführt wird**.
+
+### Typische Einsatzfälle
+- EC2 startet → ist sofort nutzbar
+- Kein manuelles SSH
+- Grundlage für Terraform / Auto Scaling
+- Disaster Recovery
+
+👉 **cloud-init = „EC2 bootet → Server existiert“**
+
+---
+
+## ☁️ `user-data.yaml` (cloud-init)
+
+> ⚠️ **Wichtig:**  
+> Dieses Skript ersetzt **base_setup.sh** + **Teile von frontend_services.sh**  
+> (TLS/Certbot bewusst **nicht** automatisiert).
+
+```yaml
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - nginx
+  - git
+  - tmux
+  - curl
+  - awscli
+  - ufw
+  - fail2ban
+  - certbot
+  - python3-certbot-nginx
+
+timezone: Europe/Berlin
+
+write_files:
+  - path: /etc/nginx/conf.d/00-default.conf
+    permissions: '0644'
+    content: |
+      server {
+          listen 80 default_server;
+          server_name _;
+          root /usr/share/nginx/html;
+          index index.html;
+          location / {
+              try_files $uri $uri/ =404;
+          }
+      }
+
+  - path: /usr/share/nginx/html/index.html
+    permissions: '0644'
+    content: |
+      nginx is alive (HTTP OK)
+
+runcmd:
+  # firewall
+  - ufw allow OpenSSH
+  - ufw allow 80
+  - ufw allow 443
+  - ufw --force enable
+
+  # enable services
+  - systemctl enable nginx
+  - systemctl start nginx
+  - systemctl enable fail2ban
+  - systemctl start fail2ban
+
+  # swap (4GB)
+  - fallocate -l 4G /swapfile
+  - chmod 600 /swapfile
+  - mkswap /swapfile
+  - swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+```

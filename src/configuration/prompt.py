@@ -8,6 +8,7 @@ uncertainty.
 Return only valid JSON. No explanations.
 """
 
+
 allowed_values_v1 = """
 Allowed values:
 - severity: ["low", "medium", "high"]

@@ -9,45 +9,17 @@ from typing import Union, Callable, Iterable
 import inspect
 import hashlib
 
+from src.utils.session import session
 
-def find_project_root(start: Path) -> Path:
+
+def find_project_root() -> Path:
+    start = Path(__file__).resolve()
+
     for p in [start, *start.parents]:
         if (p / "pyproject.toml").exists():
             return p
     raise RuntimeError("Project root not found")
 
-
-class Session:
-    def __init__(self):
-        self.env = None
-        self.branch = None
-        self.root = find_project_root(Path(__file__).resolve())
-        self.data = None
-        self.venv = None
-        self.url_repo = None
-
-        self.env_loaded = False
-
-    def save_session(self):
-        if self.root is None:
-            raise RuntimeError("Session.root must be set before saving session.")
-        file_path = Path(self.root) / ".env.session"
-
-        state= {
-            "SESSION_ENV": self.env if self.env is not None else None,
-            "SESSION_BRANCH": self.branch if self.branch is not None else None,
-            "SESSION_ROOT": str(self.root) if self.root is not None else None,
-            "SESSION_DATA": str(self.data) if self.data is not None else None,
-            "SESSION_VENV": str(self.venv) if self.venv is not None else None,
-            "SESSION_URL_REPO": self.url_repo if self.url_repo is not None else None,
-        }
-
-        with open(file_path, "w") as f:
-            for key, value in state.items():
-                f.write(f"{key}={value}\n")
-    
-
-session = Session()
 
 def ensure_dir(f_path: Union[str | Path]) -> Path:
     p = Path(f_path)
@@ -70,7 +42,7 @@ def snapshot_single_function(fn: Callable) -> dict:
 # def describe_function(fn):
 #     return {
 #         "module": fn.__module__,
-        
+    
 #         "name": fn.__name__,
 #     }
 
@@ -110,8 +82,8 @@ def make_json_safe(obj):
     if isinstance(obj, Path):
         return str(obj)
     if inspect.isfunction(obj):
-        return {"callable": describe_function(obj),
-                "source_hash": hash_function_source(obj)}
+        return snapshot_single_function(obj)
+        
     return obj
 
 
@@ -162,7 +134,6 @@ def load_env_vars():
     """
     Load environment variables from .env files if available.
     """
-
     session_path = find_dotenv(filename=".env.session")
     if session_path and os.path.exists(session_path):
         load_dotenv(session_path, override=True)

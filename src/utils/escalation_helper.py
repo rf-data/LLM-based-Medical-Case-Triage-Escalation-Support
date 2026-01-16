@@ -3,9 +3,16 @@
 import hashlib
 import os
 from pathlib import Path
+from datetime import datetime
+import time
+# import mlflow
+import pandas as pd
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.core.mlflow_logger import get_experiment_logger
 
+# from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.utils.escalation_baseline import baseline_escalation
+from src.core.session import session
 from src.utils.escalation_llm import llm_escalation_single, llm_escalation_batch
 import src.utils.general_helper as gh
 
@@ -19,6 +26,172 @@ def get_client() -> OpenAI:
     client = OpenAI()
     return client
 
+def get_data_df(data):
+    # load logger
+    logger = get_experiment_logger()
+
+    # load dataset path
+    if data == "ambiguous":
+        f_path = Path(os.getenv("AMBIGUOUS_DATA"))
+        f_name = "data/data_generic/reports_ambiguous.csv" 
+
+    elif data == "clear":
+        f_path = Path(os.getenv("CLEAR_DATA"))
+        f_name = "data/data_generic/reports_clear.csv"
+
+    elif data == "version_2":
+        f_path = Path(os.getenv("DATA_V2"))
+        f_name = "data/data_generic/escalation_dataset_v2.csv"
+
+    elif isinstance(data, Path):
+        f_path = Path(data)
+
+    # loading texts as df --> fct file load
+    df = pd.read_csv(f_path, 
+                     # index_col="Unnamed: 0"
+                     )
+    print(f"df check -- head:\n{df.head(2)}\n")
+    # print(f"")
+    # logging
+    logger.log_artifact(f_name)
+    logger.log_artifact(f_path)
+    logger.log_param("name_dataset", data)
+    logger.log_param("size_dataset", len(df)) 
+    
+    return df
+
+
+def case_escalation(df_input, save_df=True):
+    df = df_input.copy()
+
+    mode = session.mode
+
+    if mode == "baseline":  # LLM
+       fct_escalate = baseline_escalation
+    
+    elif mode == "llm":
+        prompt = session.prompt
+        scheme = session.json_scheme
+        allowed_values = session.allowed_values
+        namespace = session.namespace
+
+        fct_escalate = make_cached_escalation(prompt=prompt,
+                                                 scheme=scheme, 
+                                                 allowed_values=allowed_values,
+                                                 namespace=namespace)
+
+    else:
+        print(f"Unknown mode: {mode}")
+        return 
+
+    session.logic_function = fct_escalate
+
+    version_run = session.tag.vers_approach # config["vers_run"]
+    result_df = df_iteration(df, fct_escalate)
+
+    if mode == "llm": 
+        func_name = session.dep_function_name
+        func = session.dep_function
+
+        snapshots = gh.snapshot_dependent_functions(fct_escalate,
+                                                dependencies=[func])
+
+        version = session.tag.vers_logic
+        fn_path = f"logic/{version}"
+
+        # log_text
+        logger.log_text(f"{fn_path}/logic_complete.json",
+                json.dumps(snapshots,
+                        indent=2, ensure_ascii=False))
+
+        logger.log_text(f"{fn_path}/logic_root.py",
+                    snapshots["root"]["source"]) 
+
+        code = complete["dependencies"][f"{func_name}"]["source"]
+        logger.log_text(f"{fn_path}/logic_escalation.py",
+                    code) 
+        # set_tag
+
+        logger.set_tag("source", f"{func_name} ({version})")
+        
+        dep_func_hashed = complete["dependencies"][f"{func_name}"]["sha256"]
+        logger.set_tag("source_hashed", dep_func_hashed)
+        # dep_func_name = 
+        
+
+        # log_dict["logic"] = [snapshots, 
+        #                      ("root", snapshots["root"]), 
+        #                      (f"{func_name}", snapshots["dependencies"][f"{func_name}"])]
+
+        UNCERTAINTY_TO_CONF = {
+                        "low": 0.85,
+                        "medium": 0.6,
+                        "high": 0.3,
+                    }
+        
+        df[f"pred_{mode}_{version_run}"] = result_df["expected_action"]
+        df[f"confidence_llm_{version_run}"] = result_df["confidence"]
+        df[f"uncertainty_llm_{version_run}"] = result_df["uncertainty_level"]
+        df[f"confidence_derived_llm_{version_run}"] = (
+                                        result_df["uncertainty_level"]
+                                        .map(UNCERTAINTY_TO_CONF)
+                                                    )
+
+    else:
+        df[f"pred_{mode}_{version_run}"] = result_df
+
+        snapshot_dict = gh.snapshot_single_function(fct_escalate)
+        log_dict["logic"] = snapshot_dict
+
+    # save df
+    if save_df == True:
+        folder = Path(os.getenv("PROCESSED"))
+        gh.ensure_dir(folder)
+        f_path = folder / f"{now}_reports_{mode}_{version_run}.csv"
+        df.to_csv(f_path)
+
+    if isinstance(save_df, Path):
+        f_path = Path(save_df)
+        gh.ensure_dir(f_path)
+
+        df.to_csv(f_path)
+
+    return df, log_dict
+
+
+def df_iteration(df, fct_escalate, log_dict, mode):
+    now = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+    print(f"[INFO] Start processing reports: {now}")
+
+    start = time.perf_counter()
+    all_results = []
+    
+    for i, chunk in enumerate(gh.iter_chunks(df, chunk_size=25), start=1):
+        print(f"[INFO] Processing chunk {i}")
+
+        texts = chunk["report_text"].tolist()
+
+        chunk_results = batch_apply(
+                                texts=texts,
+                                fn=fct_escalate,
+                                batch_size=5
+                                    ) 
+        
+        assert isinstance(chunk_results, list)
+        assert all(isinstance(r, dict) for r in chunk_results)
+        # if isinstance(chunk_results, dict):
+        #     chunk_results = [chunk_results]
+            
+        all_results.extend(chunk_results)
+
+    elapsed = time.perf_counter() - start
+    
+    result_df = pd.DataFrame(all_results)
+    log_dict["runtime_total_sec"] = elapsed
+    log_dict["runtime_per_sample_sec"] = (elapsed / len(df))
+    log_dict["run_name"] = f"{now}_{mode}"
+
+    return result_df, log_dict, now
 
 def make_cache_key(report_text: str, 
                    prompt: str, 
@@ -189,28 +362,28 @@ def make_cached_escalation(*,
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
-def parallel_apply(texts, fn, max_workers=4):
-    results = [None] * len(texts)
+# def parallel_apply(texts, fn, max_workers=4):
+#     results = [None] * len(texts)
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {
-            pool.submit(fn, text): idx 
-            for idx, text in enumerate(texts)
-        }
+#     with ThreadPoolExecutor(max_workers=max_workers) as pool:
+#         futures = {
+#             pool.submit(fn, text): idx 
+#             for idx, text in enumerate(texts)
+#         }
         
-        for future in as_completed(futures):
-            idx = futures[future]
+#         for future in as_completed(futures):
+#             idx = futures[future]
 
-            try: 
-                results[idx] = future.result()
-            except Exception:
-                 results[idx] = {
-                    "expected_action": True,
-                    "confidence": 0.0,
-                    "uncertainty_level": "error"
-                }
+#             try: 
+#                 results[idx] = future.result()
+#             except Exception:
+#                  results[idx] = {
+#                     "expected_action": True,
+#                     "confidence": 0.0,
+#                     "uncertainty_level": "error"
+#                 }
     
-    return results
+#     return results
 
 
 def batch_apply(

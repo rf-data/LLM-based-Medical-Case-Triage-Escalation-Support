@@ -9,7 +9,7 @@ set -e
 PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )"
 
 mkdir -p "$PROJECT_ROOT/logs"
-LOGFILE="$PROJECT_ROOT/logs/0_mlflow.log"
+LOGFILE="$PROJECT_ROOT/logs/0_mlflow_setup.log"
 
 # ----------------------------
 # Load environment variables

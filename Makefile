@@ -1,4 +1,5 @@
-ROOT := $(CURDIR)
+ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+PROJECT := llm_escalation
 # ENV ?= core 
 # N_NEIGHBORS ?= 5
 # MSG ?= auto
@@ -19,38 +20,27 @@ req_files:
 	uv pip compile pyproject.toml --group heavy -o requirements-heavy.txt
 	uv pip compile pyproject.toml --group mlops --group heavy --group dev  -o requirements-dev.txt
 
-mlflow:
+mlflow_local:
 	${ROOT}/scripts/0_setup_mlflow.sh
 
-# etl:
-# 	bash "${ROOT}/scripts/1_ETL.sh"
-
-# all: 
-# 	docker-compose up --build -d
-
-# stop: 
-# 	docker-compose down
-
-# drift_reports:
-# 	python3 src/??
-
-# evaluation:
-# 	docker-compose up -d --build evaluation
-
-# fire-alert:
+clear_cache:
+	python ${ROOT}/src/clear_llm_cache.py
 	
-# create_embeds:
-# 	bash ${ROOT}/scripts/2_create_embeds.sh 
+all_stop:
+	@docker ps -aq | xargs -r docker stop
 
-# data_split:
-# 	bash ${ROOT}/scripts/0_data_split.sh ${MODE}=split ${NUM}
+all_remove:
+	@docker ps -aq | xargs -r docker rm -v
 
-# sample_data:
-# 	bash ${ROOT}/scripts/0_sample_data.sh ${MODE}=split ${NUM}
+ml_docker:
+	docker compose -p $(PROJECT) -f $(ROOT)/docker-compose.ml.yaml up --build -d
 
-# create_sim_mat:
-# 	bash ${ROOT}/src/3_create_SimMat.sh ${ENV} ${N_NEIGHBORS}
+ml_stop:
+	docker compose -p $(PROJECT)  -f $(ROOT)/docker-compose.api.yaml down
+	
+monitoring_docker:
+	docker compose -p $(PROJECT) -f $(ROOT)/docker-compose.monitoring.yaml up --build -d
 
-# recommend:
-# 	bash ${ROOT}/src/4_recommend.sh ${ENV} ${N_NEIGHBORS}
+monitoring_stop:
+	docker compose -p $(PROJECT) -f $(ROOT)/docker-compose.monitoring.yaml down
 

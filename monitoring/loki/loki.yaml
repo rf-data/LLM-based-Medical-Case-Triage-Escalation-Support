@@ -1,28 +1,40 @@
 auth_enabled: false
+# akzeptiert logs ohne authentication
 
 server:
   http_listen_port: 3100
 
 common:
   path_prefix: /loki
+  # zentraler root-pfad
   storage:
+  # local storage, no s3
     filesystem:
       chunks_directory: /loki/chunks
       rules_directory: /loki/rules
   replication_factor: 1
+  # 1 Kopie, kein HA oder Sharding
+  # --> für single-node
   ring:
+  # Standard & korrekt für non-distributed Loki.
     kvstore:
       store: inmemory
 
 schema_config:
   configs:
+  # gültig ab:
     - from: 2020-10-24
       store: boltdb-shipper
+      # = moderner Loki-Index
+      # empfolheln für single-node, dev, demo
       object_store: filesystem
       schema: v11
+      # DO NOT TOUCH 'SCHEME' 
       index:
+      # --> pro Tag ein Index
         prefix: index_
         period: 24h
 
 limits_config:
+# wann logs löschen?
   retention_period: 7d

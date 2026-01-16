@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import src.utils.general_helper as gh
 
 def clear_cache(cache_dir: Path=None) -> None:
@@ -12,3 +13,6 @@ def clear_cache(cache_dir: Path=None) -> None:
             f.unlink()
 
     print(f"[INFO] Cleared cache: {cache_dir}")
+
+if __name__ == "__main__":
+    clear_cache()

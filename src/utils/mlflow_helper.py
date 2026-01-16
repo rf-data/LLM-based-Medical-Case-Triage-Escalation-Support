@@ -4,150 +4,65 @@ import os
 from pathlib import Path 
 import mlflow
 import json
+from datetime import datetime
+# import logging
 # import inspect
 from mlflow.tracking import MlflowClient
 
 import src.utils.general_helper as gh
 
 
-def create_mlflow_client():
+def create_mlflow_client(initial=False):
     # configuration - initial setup
     gh.load_env_vars()
     database = os.getenv("MLFLOW_TRACKING_URI")
     mlflow.set_tracking_uri(database) 
 
+    start_time = datetime.now()
+
     client = MlflowClient()
 
-    return client
+    root = gh.find_project_root()
+    project_name = os.getenv("PROJECT_NAME", "default_project")
+    folder = f"{root}/mlflow/logs"    
+    mlflow_log = log.create_logger(f"mlflow_{project_name}", "mlflow", folder=folder)
+    
+    if initial:
+        start_text = f"""
+{"=" * 80}
+[START] {start_time.isoformat()} | Database '{database}'
+{"=" * 80}
+"""
+        mlflow_log.info(start_text) 
+    
+    mlflow_log.info(f"Initial MLflow client setup completed.")
 
-
-def create_mlflow_fingerprint(client, 
-                              exp_name=None, 
-                              run_name=None,
-                              artifact_location=None):
-    gh.load_env_vars()
-    if not artifact_location:
-        artifact_location = os.getenv("MLFLOW_ARTIFACTS")
-
-    if not exp_name:
-        exp_name = os.getenv("")
-
-    if not run_name:
-        run_name = os.getenv("")
-
-    client.create_experiment(
-                    name=run_name,
-                    artifact_location=str(artifact_location)
-                                    )
-
-    client.set_experiment(exp_name)
-
-    print(f"Created fingerprint experiment ('{exp_name}') and run ('{run_name}')")
-    print(f"Use {gh.shorten_path(artifact_location, 3)} as artifact location. ")
+    return client, mlflow_log
 
 
 def mlflow_fingerprint_check(
     client: MlflowClient,
-    experiment_name="_mlflow_fingerprint",
+    logger,
+    experiment_name,
 ):
+    if not experiment_name:
+        gh.load_env_vars()
+        experiment_name = os.getenv("FINGERPRINT_EXP")
+        # raise ValueError(
+        #     "mlflow_fingerprint_check(): experiment_name must be a non-empty string"
+        # )
+    
     exp = client.get_experiment_by_name(experiment_name)
-    assert exp is not None, f"Fingerprint experiment '{experiment_name}' not found"
+    assert exp is not None, logger.error(f"Fingerprint experiment '{experiment_name}' not found")
 
     runs = client.search_runs(
-        experiment_ids=[exp.experiment_id],
-        filter_string="tags.fingerprint = 'true'",
-        max_results=1,
-    )
+        experiment_ids=[exp.experiment_id]
+                    )
 
-    assert len(runs) > 0, "Fingerprint run not found"
+    assert len(runs) > 0, logger.error("Fingerprint run not found")
 
-    print(f"[FINGERPRINT CHECK] --> SUCCESS: MLflow fingerprint run has {len(runs)} runs.")
+    logger.info(f"[FINGERPRINT CHECK] --> SUCCESS: MLflow fingerprint run has {len(runs)} runs.")
 
-
-@dataclass
-class ExperimentLogger:
-    experiment_name: str
-    artifact_location: Path | None = None   # field(default_factory=Path)
-    
-    tags: Dict[str, object] = field(default_factory=dict)
-    params: Dict[str, object] = field(default_factory=dict)
-    metrics: Dict[str, float] = field(default_factory=dict)
-    artifacts: List[str] = field(default_factory=list)
-    texts: Dict[str, str] = field(default_factory=dict)
-    # dicts: Dict[str, str] = field(default_factory=dict)
-
-    def log_artifact(self, path: str):
-        self.artifacts.append(path)
-
-    def log_dict(self, key: str, value: str):
-        self.dicts[key] = value
-
-    def log_metric(self, key: str, value: float):
-        self.metrics[key] = value
-
-    def log_param(self, key: str, value: object):
-        self.params[key] = value
-
-    def log_text(self, name: str, text: str):
-        self.texts[name] = text
-
-    def set_tag(self, key: str, value: str):
-        self.tags[key] = value
-
-    def setup_experiment(self):
-        gh.load_env_vars()
-        mlflow_uri = os.getenv("MLFLOW_TRACKING_URI")
-        mlflow.set_tracking_uri(mlflow_uri)
-        
-        exp = mlflow.get_experiment_by_name(
-            self.experiment_name
-            )
-
-        if exp is None:
-            mlflow.create_experiment(
-                    name=self.experiment_name,
-                    artifact_location=str(self.artifact_location)
-                                    )
-
-        mlflow.set_experiment(self.experiment_name)
-
-    # def setup_experiment(self):
-    #     if self.artifact_location:
-    #         mlflow.create_experiment(
-    #             name=self.experiment_name,
-    #             artifact_location=str(self.artifact_location)
-    #         )
-    #     mlflow.set_experiment(self.experiment_name)
-    
-    # def set_artifact_location(self, folder=None):
-    #     if not folder:
-    #         self.artifact_location = Path("home/robfra/0_Portfolio_Projekte/LLM/mlflow/artifacts")
-    #     else:
-    #         self.artifact_location = Path(folder)
-
-    # def set_experiment(self, name=None): # , name_experiment):
-    #     self.experiment_name = name
-
-    def flush(self, run_name: str):
-        with mlflow.start_run(run_name=run_name):
-        # logger.flush()
-        
-            for k, v in self.params.items():
-                mlflow.log_param(k, v)
-
-            for k, v in self.metrics.items():
-                mlflow.log_metric(k, v)
-
-            for path in self.artifacts:
-                mlflow.log_artifact(path)
-
-            for name, text in self.texts.items():
-                mlflow.log_text(text, name)
-
-            for k, v in self.tags.items():
-                mlflow.set_tag(k, v)
-
-            print("MLflow logging successful")
 
 
 def mlflow_logging(log_dict): #, mode="baseline"):
@@ -191,7 +106,8 @@ def mlflow_logging(log_dict): #, mode="baseline"):
     # fn.to_csv(fn_path, index=False)
 
     # logger.log_artifact(fn_path)
-    fn_path = log_dict["file_name_logic"]
+    version = config["vers_logic"]
+    fn_path = f"logic/{version}"
     logic = log_dict["logic"]
 
     if isinstance(logic, list) and len(logic)==3:
@@ -212,9 +128,13 @@ def mlflow_logging(log_dict): #, mode="baseline"):
         code = logic["source"]
 
     else: 
-        print(f"[ERROR] log_dict['logic'] must contain 1 dict or a list of 3 tuples -- here: {len(log_dict["logic"])} elements of type {[(i, type(e).__name__) for (i, e) in enumerate(log_dict["logic"])]}")
-    logger.set_tag(f"{fn_path}/func_name", func_name)
-    logger.set_tag(f"{fn_path}/code_hashed", code_hashed)
+        logger.logger.error(f"log_dict['logic'] must contain 1 dict or a list of 3 tuples -- here: {len(log_dict["logic"])} elements of type {[(i, type(e).__name__) for (i, e) in enumerate(log_dict["logic"])]}")
+    
+    # escalation_rule = log_dict["escalation_rule"]
+
+    logger.set_tag("source", f"{func_name} ({version})")       # {fn_path}/
+    logger.set_tag("source_hashed", code_hashed)    # {fn_path}/code_hashed"
+    
     logger.log_text(f"{fn_path}/logic_escalation.py",
                     code)  
     logger.log_text(
@@ -223,7 +143,18 @@ def mlflow_logging(log_dict): #, mode="baseline"):
                         indent=2, ensure_ascii=False)
                         )
     
-    
+    rules = log_dict.get("escalation_rules", None)
+    if rules:
+        rule_name = rules["name"]
+        logger.set_tag("escalate_rule", rule_name)
+
+        rule_hashed = rules["sha256"]
+        logger.set_tag("escalate_rule_hashed", rule_hashed)
+
+        rules_code = rules["source"]
+        logger.log_text(f"{fn_path}/logic_rules.py",
+                    rules_code) 
+
     if "red_flags" in log_dict.keys():
         logger.log_text(
                 log_dict["file_name_red_flags"],

@@ -1,6 +1,6 @@
 import re
 
-from .red_flags import RED_FLAGS
+from src.configuration.red_flags import RED_FLAGS
 
 def baseline_escalation(report: str) -> bool:
     text = report.lower()
