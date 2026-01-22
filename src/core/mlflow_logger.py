@@ -109,11 +109,6 @@ class ExperimentLogger:
         # else:
         #     self.logger.warning(f"No texts backup found at {texts_path}")
         #     missing = True
-
-        
-        
-
-
     
     def local_backup(self, folder=None):
         """Saves all logged data to local files for backup purposes."""
@@ -126,7 +121,7 @@ class ExperimentLogger:
 
         # Save tags
         tags_path = folder / f"{now}_tags.json"
-        fh.save_dict(tags_path, self.params)
+        fh.save_dict(tags_path, self.tags)
 
         # Save params
         params_path = folder / f"{now}_params.json"

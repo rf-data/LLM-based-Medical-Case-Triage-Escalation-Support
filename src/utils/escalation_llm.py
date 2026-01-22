@@ -1,5 +1,7 @@
 # imports
 import json
+import os
+from pathlib import Path 
 from openai import OpenAI
 
 from src.core.mlflow_logger import get_experiment_logger
@@ -7,6 +9,8 @@ from src.core.mlflow_logger import get_experiment_logger
 from src.core.session import session
 import src.utils.escalation_helper as esc
 import src.utils.general_helper as gh
+import src.utils.path_helper as ph
+import src.utils.file_helper as fh
 
 
 # _thread_local = threading.local()
@@ -27,18 +31,19 @@ def llm_escalation(df_input, save_df=True):
     scheme = session.json_scheme
     allowed_values = session.allowed_values
     namespace = session.namespace
+    batch_mode = session.tags.get("batch", True)
 
     fct_escalate = make_cached_escalation(prompt=prompt,
                                         scheme=scheme, 
                                         allowed_values=allowed_values,
-                                        namespace=namespace)
+                                        namespace=namespace,
+                                        batch_mode=batch_mode)
 
     mode = session.mode
     version_run = session.tags.get("vers_approach", "tba") # config["vers_run"]
     result_df = esc.df_iteration(df, fct_escalate)
 
-    version = session.tags.get("vers_logic", "tba")
-    fn_path = f"logic/{version}"
+    
     func_name = session.dep_function_name
     func = session.dep_function
 
@@ -46,18 +51,38 @@ def llm_escalation(df_input, save_df=True):
                                                 dependencies=[func])
 
     # log_text
-    logger.log_text(f"{fn_path}/logic_complete.json",
+    logger.log_text("logic_complete.json",
                 json.dumps(snapshots,
                         indent=2, ensure_ascii=False))
 
-    logger.log_text(f"{fn_path}/logic_root.py",
-                    snapshots["root"]["source"]) 
+    logic_root = snapshots["root"]["source"]
+    logger.log_text("logic_root.py",
+                    logic_root) 
 
-    code = snapshots["dependencies"][f"{func_name}"]["source"]
-    logger.log_text(f"{fn_path}/logic_escalation.py",
-                    code) 
+    logic_escalation = snapshots["dependencies"][f"{func_name}"]["source"]
+    logger.log_text("logic_escalation.py",
+                    logic_escalation) 
+    
+
+    # save texts local
+    version = session.tags.get("vers_logic", "tba")
+    folder = os.getenv("PROCESSED")
+    path_comp = Path(f"{folder}/logic/{version}/logic_complete.json") 
+    path_root = Path(f"{folder}/logic/{version}/logic_root.py") 
+    path_esc = Path(f"{folder}/logic/{version}/logic_escalation.py") 
+
+    for path, file in zip([path_comp, path_root, path_esc],
+                    [snapshots, logic_root, logic_escalation]):
+        if not path.exists():
+            ph.ensure_dir(path)
+            if path != path_comp:
+                fh.save_dict(path, file)
+            else:
+                fh.save_text(path, file)
+        else:
+            print(f"File '{path}' already exists. Hence, no overwrite")
+
     # set_tag
-
     logger.set_tag("source", f"{func_name} ({version})")
         
     dep_func_hashed = snapshots["dependencies"][f"{func_name}"]["sha256"]
@@ -88,7 +113,7 @@ def make_cached_escalation(*,
                            scheme: dict,
                            allowed_values: str,
                            namespace: str,
-                           mode: str="batch"):
+                           batch_mode: bool=True):
     
     """
     Factory that returns a cached escalation function.
@@ -97,7 +122,7 @@ def make_cached_escalation(*,
     mode="batch":  fn(texts: list[str]) -> list[dict]
     """
 
-    if mode == "single":
+    if batch_mode == False:
         def cached_single(texts: str) -> dict:
             key = esc.make_cache_key(texts, 
                                  prompt, 
@@ -119,7 +144,7 @@ def make_cached_escalation(*,
 
         return cached_single
     
-    if mode == "batch":
+    elif batch_mode == True: 
 
         def cached_batch(texts: list[str]) -> list[dict]:
             results = [None] * len(texts)
@@ -157,7 +182,7 @@ def make_cached_escalation(*,
         return cached_batch
     
     else:
-        raise ValueError(f"Unknown mode: {mode}")
+        raise ValueError(f"Unknown mode: {batch_mode}")
 
 
 

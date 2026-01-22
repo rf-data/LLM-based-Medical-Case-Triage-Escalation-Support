@@ -9,6 +9,9 @@ import click
 import src.utils.general_helper as gh
 import src.utils.escalation_helper as esc
 import src.utils.evaluation_helper as eval
+import src.utils.path_helper as ph
+import src.utils.file_helper as fh
+
 import src.utils.escalation_llm as llm
 import src.utils.escalation_baseline as base
 # import src.utils.mlflow_helper as mh 
@@ -40,17 +43,20 @@ from src.core.mlflow_logger import get_experiment_logger
 def escalation_check(data="version_2", mode="llm", logging=False):
     # configurations
     gh.load_env_vars()
-
+    folder = os.getenv("PROCESSED")
+    
     config = {
         "tags": {
-            "approach": f"{mode} (post_processed)", 
-            "vers_approach": "v1 (batch_size=5)",
+            "approach": f"{mode}",
+            "as batch": True, 
+            "post-processing": True, 
+            "vers_approach": "v3",
             "vers_data": "v2",
-            "vers_logic": "v2",
+            "vers_logic": "v3",
             "vers_flags": "v1",
             "vers_prompt": "v1",
             "vers_values": "v1",
-            "vers_json": "v2",
+            "vers_json": "v1",
                 },
         "parameter": {
             "git_commit": gh.get_git_commit(),
@@ -87,7 +93,7 @@ def escalation_check(data="version_2", mode="llm", logging=False):
                 artifact_location=arti_loc
                             )
     exp_logger.setup_experiment()
-    # event_logger = exp_logger.logger
+    event_logger = exp_logger.logger
 
     session.backup_dir = exp_logger.backup_dir
 
@@ -95,31 +101,55 @@ def escalation_check(data="version_2", mode="llm", logging=False):
         vers_flags = session.tags.get("vers_flags", "tba")
 
         exp_logger.log_text(
-                f"red_flags/{vers_flags}.json",
+                "red_flags.json",
                 json.dumps(RED_FLAGS,
                         indent=2, ensure_ascii=False)
                         )
 
-    if mode == "llm":
-        vers_prompt = session.tags.get("vers_prompt", "tba")
-        vers_values = session.tags.get("vers_values", "tba")
-        vers_json = session.tags.get("vers_json", "tba")
+        path_flag = Path(f"{folder}/flag/{vers_flags}/red_flags.json")
+        if not path_flag.exists():
+            ph.ensure_dir(path_flag)
+            fh.save_dict(path_flag, RED_FLAGS)            
+        else:
+            event_logger.error(f"File '{path_flag}' already exists. Hence, no overwrite")
 
+    if mode == "llm":
         exp_logger.log_text(
-                f"prompts/{vers_prompt}/system_prompt.txt", 
+                "system_prompt.txt", 
                 config["prompt"]
                 )
 
         exp_logger.log_text(
-                f"prompts/{vers_values}/allowed_values.txt", 
+                "allowed_values.txt", 
                 config["allowed_values"]
                 )
 
         exp_logger.log_text(
-                f"json_scheme/{vers_json}.json", 
+                "json_scheme.json", 
                 json.dumps(config["json_scheme"], 
                         indent=2, ensure_ascii=False)
                         )
+        
+        # save texts local
+        vers_prompt = session.tags.get("vers_prompt", "tba")
+        vers_values = session.tags.get("vers_values", "tba")
+        vers_json = session.tags.get("vers_json", "tba")
+
+        path_prompt = Path(f"{folder}/prompt/{vers_prompt}/system_prompt.txt")
+        path_values = Path(f"{folder}/allowed_values/{vers_values}/allowed_values.txt")
+        path_json = Path(f"{folder}/json_scheme/{vers_json}/json_scheme.json")
+
+        for path, file in zip([path_prompt, path_values, path_json],
+                            [config["prompt"], config["allowed_values"], config["json_scheme"]]):
+            if not path.exists():
+                if path != path_json:
+                    ph.ensure_dir(path)
+                    fh.save_text(path, file)
+                    
+                else:
+                    fh.save_dict(path, file)
+            else:
+                event_logger.error(f"File '{path}' already exists. Hence, no overwrite")
     
     # get data
     df = esc.get_data_df(data)
@@ -132,7 +162,7 @@ def escalation_check(data="version_2", mode="llm", logging=False):
         eval.evaluate_escalation(df_esc)
 
     else:
-        print(f"Unknown mode: {mode}")
+        event_logger.error(f"Unknown mode: {mode}")
         return 
 
     if logging:

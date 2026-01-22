@@ -34,7 +34,6 @@ class Session:
         self.json_scheme: Dict[str, Any] | None = None
         self.dep_function: Callable | None = None
         self.dep_function_name: str | None = None
-        self.escalation_rule: Dict | None = None
         self.run_time: List | None = None
 
         self.env_loaded = False
@@ -104,7 +103,6 @@ class Session:
             "json_scheme": self.json_scheme,
             "dep_function": self.dep_function,
             "dep_function_name": self.dep_function_name,
-            "escalation_rule": self.escalation_rule,
             "run_time": self.run_time
         }
 

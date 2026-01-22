@@ -22,6 +22,7 @@ import src.utils.path_helper as ph
 def get_data_df(data):
     # load logger
     logger = get_experiment_logger()
+    event_logger = logger.logger
 
     # load dataset path
     if data == "ambiguous":
@@ -43,10 +44,10 @@ def get_data_df(data):
     df = pd.read_csv(f_path, 
                      # index_col="Unnamed: 0"
                      )
-    print(f"df check -- head:\n{df.head(2)}\n")
+    event_logger.info(f"df check -- head:\n{df.head(2)}\n")
     # print(f"")
     # logging
-    logger.log_artifact(f_name)
+    logger.log_param("file name", f_name)
     logger.log_artifact(f_path)
     logger.log_param("name_dataset", data)
     logger.log_param("size_dataset", len(df)) 
@@ -62,7 +63,7 @@ def save_escalation_df(df, save_df):
 
         folder = Path(os.getenv("PROCESSED"))
         ph.ensure_dir(folder)
-        f_path = folder / f"{now}_reports_{mode}_{version_run}.csv"
+        f_path = folder / f"reports/{now}_{mode}_{version_run}_df.csv"
         df.to_csv(f_path)
 
     if isinstance(save_df, Path):
@@ -75,9 +76,10 @@ def save_escalation_df(df, save_df):
 def df_iteration(df, fct_escalate):
     # load logger
     logger = get_experiment_logger()
+    event_logger = logger.logger
 
     now = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    print(f"[INFO] Start processing reports: {now}")
+    event_logger.info(f"Start processing reports: {now}")
     session.now = now
     session.save_session()
 
@@ -85,9 +87,9 @@ def df_iteration(df, fct_escalate):
     all_results = []
     
     for i, chunk in enumerate(gh.iter_chunks(df, chunk_size=25), start=1):
-        print(f"[INFO] Processing chunk {i}")
+        event_logger.info(f"Processing chunk {i}")
 
-        print(f"[CHECK] 'Chunk' columns:", chunk.columns.tolist())
+        event_logger.info(f"'Chunk' columns:\n{chunk.columns.tolist()}")
 
         texts = chunk["report_text"].tolist()
 
@@ -107,7 +109,7 @@ def df_iteration(df, fct_escalate):
     elapsed = time.perf_counter() - start
     
     result_df = pd.DataFrame(all_results)
-    print(f"\n[CHECK] 'result_df' columns:", result_df.columns.tolist(), "\n")
+    event_logger.info(f"\n[CHECK] 'result_df' columns:\n{result_df.columns.tolist()}\n")
 
     logger.log_metric("runtime_total_sec", 
                       elapsed)
@@ -177,6 +179,9 @@ def batch_apply(
     Apply an LLM escalation function in batches.
     Returns a list of results in the same order as texts.
     """
+    # setup logger
+    logger = get_experiment_logger()
+    event_logger = logger.logger
 
     results = [None] * len(texts)
 
@@ -204,9 +209,9 @@ def batch_apply(
                 results[start + i] = res
             
             else:
-                print(f"[ERROR] wrong dtype at index {i}")
-                print(f"result:\n{res}\n")
-                print(f"type:\t{type(res)}")
+                event_logger.error(f"wrong dtype at index {i}"
+                                   f"result:\n{res}\n"
+                                   f"type:\t{type(res)}")
             
     return results
 
