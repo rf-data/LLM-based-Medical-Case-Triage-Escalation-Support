@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 source .env.frontend
+
+: "${DISABLED_DIR:?DISABLED_DIR must be set}"
+: "${NGINX_CONF_DIR:?NGINX_CONF_DIR must be set}"
+: "${DOMAIN_MAIN:?DOMAIN_MAIN must be set}"
 
 echo "=== Frontend Finalization (HTTPS + nginx cleanup) ==="
 
@@ -9,6 +13,11 @@ echo "[1/6] Preconditions check"
 
 command -v certbot >/dev/null || {
   echo "ERROR: certbot not installed"
+  exit 1
+}
+
+sudo nginx -t || {
+  echo "ERROR: nginx config test failed"
   exit 1
 }
 
@@ -49,12 +58,6 @@ server {
     return 301 https://$DOMAIN_MAIN\$request_uri;
 }
 
-server {
-    listen 80;
-    server_name $DOMAIN_CODE;
-    return 301 https://$DOMAIN_CODE\$request_uri;
-}
-
 ############################
 # HTTPS – Homepage
 ############################
@@ -67,57 +70,22 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_MAIN/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
 
-    root /usr/share/nginx/html;
-    index index.html index.htm;
+    client_max_body_size 50M;
 
     location / {
-        try_files \$uri \$uri/ =404;
-    }
-}
-
-############################
-# HTTPS – code-server
-############################
-
-server {
-    listen 443 ssl;
-    server_name $DOMAIN_CODE;
-
-    ssl_certificate /etc/letsencrypt/live/$DOMAIN_MAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_MAIN/privkey.pem;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-
-    location / {
-        proxy_pass http://127.0.0.1:8443;
-        proxy_http_version 1.1;
-
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection upgrade;
-        proxy_set_header Accept-Encoding "";
-
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    # Proxy to Streamlit Portfolio App
-    location /portfolio/ {
         proxy_pass http://127.0.0.1:8501;
         proxy_http_version 1.1;
-
-        # Path rewrite so Streamlit sees the correct path
-        rewrite ^/portfolio/(.*)$ /$1 break;
 
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Websockets
+        # WebSockets (necessary for Streamlit)
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
+        proxy_read_timeout 86400;
     }
 }
 EOF
@@ -131,6 +99,62 @@ sudo systemctl reload nginx
 echo "[6/6] Final verification"
 
 curl -s -I "https://$DOMAIN_MAIN" | head -n 1
-curl -s -I "https://$DOMAIN_CODE" | head -n 1
+# curl -s -I "https://$DOMAIN_CODE" | head -n 1
 
 echo "=== Frontend finalized successfully ==="
+
+
+############################
+# HTTP → HTTPS Redirects
+############################
+# server {
+#     listen 80;
+#     server_name $DOMAIN_CODE;
+#     return 301 https://$DOMAIN_CODE\$request_uri;
+# }
+
+############################
+# HTTPS – code-server
+############################
+
+# server {
+#     listen 443 ssl;
+#     server_name $DOMAIN_CODE;
+
+#     ssl_certificate /etc/letsencrypt/live/$DOMAIN_MAIN/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_MAIN/privkey.pem;
+#     include /etc/letsencrypt/options-ssl-nginx.conf;
+
+#     location / {
+#         proxy_pass http://127.0.0.1:8443;
+#         proxy_http_version 1.1;
+
+#         proxy_set_header Upgrade \$http_upgrade;
+#         proxy_set_header Connection upgrade;
+#         proxy_set_header Accept-Encoding "";
+
+#         proxy_set_header Host \$host;
+#         proxy_set_header X-Real-IP \$remote_addr;
+#         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto \$scheme;
+#     }
+
+#     # Proxy to Streamlit Portfolio App
+#     location /portfolio/ {
+#         proxy_pass http://127.0.0.1:8501;
+#         proxy_http_version 1.1;
+
+#         # Path rewrite so Streamlit sees the correct path
+#         rewrite ^/portfolio/(.*)$ /$1 break;
+
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+
+#         # Websockets
+#         proxy_set_header Upgrade $http_upgrade;
+#         proxy_set_header Connection "upgrade";
+#     }
+# }
+

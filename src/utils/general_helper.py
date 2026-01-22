@@ -1,34 +1,14 @@
 # imports
 from dotenv import load_dotenv, find_dotenv
 import subprocess
-import json
-import numpy as np
+
+# import numpy as np
 import os
-from pathlib import Path
-from typing import Union, Callable, Iterable
+from typing import Callable, Iterable
 import inspect
 import hashlib
 
-from src.utils.session import session
-
-
-def find_project_root() -> Path:
-    start = Path(__file__).resolve()
-
-    for p in [start, *start.parents]:
-        if (p / "pyproject.toml").exists():
-            return p
-    raise RuntimeError("Project root not found")
-
-
-def ensure_dir(f_path: Union[str | Path]) -> Path:
-    p = Path(f_path)
-    
-    target_dir = p.parent if p.suffix else p 
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    return p
-
+from src.core.session import session
 
 def snapshot_single_function(fn: Callable) -> dict:
     src = inspect.getsource(fn)
@@ -65,64 +45,6 @@ def snapshot_dependent_functions(
 #     src = inspect.getsource(fn)
 #     return src, hashlib.sha256(src.encode("utf-8")).hexdigest()
 
-
-def make_json_safe(obj):
-    if isinstance(obj, dict):
-        return {k: make_json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [make_json_safe(v) for v in obj]
-    if isinstance(obj, tuple):
-        return [make_json_safe(v) for v in obj]
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    if isinstance(obj, (np.integer,)):
-        return int(obj)
-    if isinstance(obj, (np.floating,)):
-        return float(obj)
-    if isinstance(obj, Path):
-        return str(obj)
-    if inspect.isfunction(obj):
-        return snapshot_single_function(obj)
-        
-    return obj
-
-
-def shorten_path(path, n=3):
-    p = Path(path).parts
-    return "/".join(p[-n:])
-
-
-def save_dict(path: Path, data: dict) -> None:
-    ensure_dir(path) 
-    data_new = make_json_safe(data)
-
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(
-            data_new,
-            f,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-        )
-        print(f"Dict saved as {shorten_path(path, 3)}")
-
-
-def append_json(path: Path, data: dict) -> None:
-    ensure_dir(path) 
-    data_new = make_json_safe(data)
-
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(data_new) + "\n")
-        print(f"Appending data on {shorten_path(path, 3)}")
-
-
-def load_dict(path: Path) -> dict:
-    ensure_dir(path) 
-
-    with path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-        print(f"Dict loaded: {shorten_path(path, 3)}")
-        return data
 
 
 def iter_chunks(df, chunk_size=25):

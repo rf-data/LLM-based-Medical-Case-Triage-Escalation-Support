@@ -5,7 +5,7 @@ import os
 from pathlib import Path 
 
 import src.utils.general_helper as gh 
-
+import src.utils.path_helper as ph
 
 def has_file_handler(logger, log_path):
     for h in logger.handlers:
@@ -68,7 +68,7 @@ def create_logger(name: str,
             gh.load_env_vars()
             folder = os.getenv("LOGS", "logs")
         
-        log_path = gh.ensure_dir(folder)
+        log_path = ph.ensure_dir(folder)
         log_file = log_path / f"{file_name}.log"
         
         # check if file handler already exists

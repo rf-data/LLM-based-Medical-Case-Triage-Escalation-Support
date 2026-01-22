@@ -1,22 +1,24 @@
 services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: cadvisor
+    privileged: true
     ports:
-      - "9090:9090"
+      - "8800:8080"
     volumes:
-      - ./monitoring/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml
-      - ./monitoring/prometheus/rules:/etc/prometheus/rules
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yaml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
-      - '--web.console.templates=/usr/share/prometheus/consoles'
-    restart: always
-    # depends_on:
-    #   service_1:
-    #     condition: service_healthy
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    restart: unless-stopped
+
+  # evidently:
+  #   image: evidentlyai/evidently:latest
+  #   container_name: evidently
+  #   ports:
+  #     - "8000:8000"
+  #   command: evidently ui --host 0.0.0.0 --port 8000
+  #   restart: always
 
   grafana:
     image: grafana/grafana:latest
@@ -35,22 +37,6 @@ services:
       #   condition: service_healthy
       prometheus:
         condition: service_started
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--path.rootfs=/rootfs'
-      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/run/docker/netns/.+)$'
-    restart: always
 
   loki:
     image: grafana/loki:2.9.4
@@ -71,6 +57,41 @@ services:
     # depends_on:
     #   - prometheus
 
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/run/docker/netns/.+)$'
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yaml:/etc/prometheus/prometheus.yaml
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yaml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: always
+    # depends_on:
+    #   service_1:
+    #     condition: service_healthy
+
   promtail:
     image: grafana/promtail:2.9.4
     container_name: promtail
@@ -86,13 +107,6 @@ services:
     restart: always
     depends_on:
       - loki
-  # evidently:
-  #   image: evidentlyai/evidently:latest
-  #   container_name: evidently
-  #   ports:
-  #     - "8000:8000"
-  #   command: evidently ui --host 0.0.0.0 --port 8000
-  #   restart: always
 
 volumes:
   grafana-data:

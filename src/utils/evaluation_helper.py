@@ -1,12 +1,14 @@
 ##
-
+import json
 import pandas as pd
 from sklearn.metrics import (precision_recall_fscore_support,
                              classification_report, 
                              confusion_matrix)
 import src.utils.general_helper as gh
-  
-def encode_labels(df, mode, config):
+from src.core.session import session
+from src.core.mlflow_logger import get_experiment_logger
+
+def encode_labels(df):
     LABEL_TO_INT = {
             "no_escalation": 0,
             "escalation": 1,
@@ -17,8 +19,11 @@ def encode_labels(df, mode, config):
                 True: 1,
                 }
 
+    mode = session.mode
+    version = session.tags.get("vers_approach", "tba")
+
     y_true = df["expected_action"].map(LABEL_TO_INT)
-    y_pred = df[f"pred_{mode}_{config["vers_run"]}"].map(BOOL_TO_INT)
+    y_pred = df[f"pred_{mode}_{version}"].map(BOOL_TO_INT)
     
     # check for invalid values
     if y_true.isna().any():
@@ -30,7 +35,10 @@ def encode_labels(df, mode, config):
     return y_true, y_pred
 
 
-def create_evaluation_metrics(y_true, y_pred, log_dict): 
+def create_evaluation_metrics(y_true, y_pred): 
+    # setup logger
+    logger = get_experiment_logger()
+
     # creation of ClassReport
     report = classification_report(y_true, 
                                     y_pred, 
@@ -39,17 +47,44 @@ def create_evaluation_metrics(y_true, y_pred, log_dict):
                                     zero_division=0,
                                     output_dict=True)
 
-    # create ConfMatrix + Classification metrics
-    cm = confusion_matrix(                  # tn, fp, fn, tp
+    # log ClassReport
+    logger.log_text(
+                "ClassReport.json",
+                json.dumps(report, indent=2)
+            )
+    
+
+    logger.log_metric("precision_escalation", 
+                      report["escalation"]["precision"])
+    
+    logger.log_metric("recall_escalation", 
+                      report["escalation"]["recall"])
+    
+    # create ConfMatrix
+    tn, fp, fn, tp = confusion_matrix(                  # tn, fp, fn, tp
                         y_true, 
                         y_pred, 
                         labels=[False, True]
                         ).ravel()
 
-    print("false_negatives", cm[2])
-    print("false_positives", cm[1])
+    print("false_negatives", fn)
+    print("false_positives", fp)
 
-    metrics = precision_recall_fscore_support(          # precision, recall, f1, support
+    cm = {
+        "true_negatives": tn,
+        "true_positives": tp,
+        "false_negatives": fn,
+        "false_positives": fp,
+    }
+    # logs values from ConfMatrix
+    logger.log_text("ConfMatrix.json", json.dumps(cm, indent=2))
+    logger.log_metric("true_negatives", tn)
+    logger.log_metric("true_positives", tp)
+    logger.log_metric("false_negatives", fn)
+    logger.log_metric("false_positives", fp)
+
+    # compile Classification metrics
+    precision, recall, f1, _ = precision_recall_fscore_support(          # precision, recall, f1, support
                                             y_true,
                                             y_pred,
                                             average="binary",
@@ -57,23 +92,16 @@ def create_evaluation_metrics(y_true, y_pred, log_dict):
                                             zero_division=0
                                             )
 
-    print(f"precision: {metrics[0]}")
-    print(f"recall: {metrics[1]}")
-    print(f"f1: {metrics[2]}")
+    print(f"precision: {precision}")
+    print(f"recall: {recall}")
+    print(f"f1: {f1}")
 
-    #  "runtime_total_sec": elapsed,
-    #     "runtime_per_sample_sec": (elapsed / len(df)),
-    #     "class_report": report,
-    #     "confusion_matrix": cm, 
-    #     "class_metrics": metrics,
-    #     "file_name_df_fn": f"mlflow/evaluation/false_negatives_{mode}_{vers_run}.csv",
-    #     "df_fn": false_negatives, 
+    # log ClassMetrics 
+    logger.log_metric("precision", precision)
+    logger.log_metric("recall", recall)
+    logger.log_metric("f1", f1)
 
-    log_dict["class_report"] = report
-    log_dict["confusion_matrix"] = cm
-    log_dict["class_metrics"] = metrics
-
-    return log_dict
+    return 
 
 
 def need_for_escalation(df_input): # : pd.DataFrame -> pd.DataFrame:
@@ -96,27 +124,42 @@ def need_for_escalation(df_input): # : pd.DataFrame -> pd.DataFrame:
         # conditional escalation logic / medium severity
         elif (severity == "medium" 
               and confidence >= 0.7
-              and uncertainty=="low"):
+              and uncertainty == "low"):
             return "escalation"
     
         else:
             return "no_escalation"
 
+    REQUIRED_COLS = ["severity", "confidence", "uncertainty"]
+    for col in REQUIRED_COLS:
+        if col not in df.columns:
+            df[col] = None
+
     df["expected_action"] = df.apply(
                             lambda row: escalation_logic(
-                                row["severity"], 
-                                row["confidence"], 
-                                row["uncertainty"]), 
+                                row.get("severity", "unknown"), 
+                                row.get("confidence", "unknown"), 
+                                row.get("uncertainty", "unknown")), 
                                 axis=1)
     return df
 
 
-def evaluate_escalation(df_input, mode, config, log_dict):
+def evaluate_escalation(df_input):
+    # start logger
+    logger = get_experiment_logger()
+
+    version = session.tags.get("vers_logic", "tba")
+    fn_path = f"logic/{version}"
     df = df_input.copy()
 
     df_esc = need_for_escalation(df)
     snapshot_dict = gh.snapshot_single_function(need_for_escalation)
-    log_dict["escalation_rule"] = snapshot_dict
 
-    y_true, y_pred = encode_labels(df_esc, mode, config)
-    _ = create_evaluation_metrics(y_true, y_pred, log_dict)
+    # log
+    logger.set_tag("escalate_rule", snapshot_dict["name"])
+    logger.set_tag("escalate_rule_hashed", snapshot_dict["sha256"])
+    logger.log_text(f"{fn_path}/logic_rules.py",
+                    snapshot_dict["source"])
+    
+    y_true, y_pred = encode_labels(df_esc)
+    create_evaluation_metrics(y_true, y_pred)

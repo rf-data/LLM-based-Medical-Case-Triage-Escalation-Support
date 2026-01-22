@@ -15,12 +15,3 @@ scheme_v2 = {
         "missing_information": ["string"],
         "confidence": 0.0
         }
-
-def need_for_escalation(scheme: dict) -> bool:
-    """
-    Determine if escalation is needed based on the severity level in the scheme.
-
-    Args:
-        scheme (dict): The JSON scheme containing the severity level.
-    """
-

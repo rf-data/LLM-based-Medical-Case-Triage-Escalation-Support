@@ -13,7 +13,8 @@ sudo apt install -y \
   gnupg \
   git \
   tmux \
-  awscli
+  awscli \
+  iptables-persistent
 
 # --- Docker installation ---
 if ! command -v docker &> /dev/null; then
@@ -34,6 +35,12 @@ fi
 
 # --- Docker permissions ---
 sudo usermod -aG docker $USER || true
+
+# --- Persistent iptables rules to ensure SSH access ---
+sudo iptables -I INPUT 1 -p tcp --dport 22 -m state --state NEW,ESTABLISHED -j ACCEPT
+sudo iptables -I OUTPUT 1 -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+sudo iptables -I DOCKER-USER 1 -p tcp --dport 22 -j ACCEPT
+sudo netfilter-persistent save
 
 # --- Project workspace ---
 # mkdir -p ~/rakuten-mlops/{monitoring,data,logs}

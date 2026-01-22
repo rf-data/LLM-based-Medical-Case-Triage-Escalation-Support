@@ -1,0 +1,9 @@
+container_cpu_usage_seconds_total
+
+container_memory_usage_bytes
+
+container_memory_working_set_bytes
+
+container_restarts_total
+
+container_oom_events_total

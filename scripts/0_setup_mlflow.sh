@@ -46,7 +46,7 @@ short_artifacts=$(echo "$ARTIFACT_DIR" | awk -F'/' '{print $(NF-1)"/"$NF}')
   echo "Artifacts: .../$short_artifacts"
 
   # SQLite --> only local + one user access possible
-  exec mlflow server \
+  mlflow server \
     --backend-store-uri $MLFLOW_DB \
     --default-artifact-root $ARTIFACT_DIR \
     --host 127.0.0.1 \

@@ -1,0 +1,36 @@
+# services:
+#   mlflow-postgres:
+#     image: postgres:13
+#     container_name: mlflow-postgres
+#     environment:
+#       POSTGRES_USER: ${MLFLOW_POSTGRES_USER}
+#       POSTGRES_PASSWORD: ${MLFLOW_POSTGRES_PASSWORD}
+#       POSTGRES_DB: ${MLFLOW_POSTGRES_DB}
+#     ports:
+#       - "5433:5432"
+#     volumes:
+#       - mlflow-postgres-db-volume:/var/lib/postgresql/data
+#     restart: always
+
+#   mlflow:
+#     build:
+#       context: .
+#       dockerfile: mlflow/Dockerfile
+#     # image: ghcr.io/mlflow/mlflow:v2.9.2
+#     container_name: mlflow
+#     depends_on:
+#       - mlflow-postgres
+#     ports:
+#       - "5000:5000"
+#     environment:
+#       MLFLOW_TRACKING_URI: http://mlflow:5000
+#       BACKEND_STORE_URI: postgresql://${MLFLOW_POSTGRES_USER}:${MLFLOW_POSTGRES_PASSWORD}@mlflow-postgres:5432/${MLFLOW_POSTGRES_DB}
+#       ARTIFACT_ROOT: /mlflow/artifacts
+#     volumes:
+#       - ./mlflow/artifacts:/mlflow/artifacts
+#       - ./mlflow/runs:/mlflow/runs
+
+# volumes:
+#   mlflow-postgres-db-volume:
+
+

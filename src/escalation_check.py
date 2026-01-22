@@ -3,13 +3,15 @@
 
 import os
 from pathlib import Path
-
+import json
 import click
 
 import src.utils.general_helper as gh
 import src.utils.escalation_helper as esc
 import src.utils.evaluation_helper as eval
-import src.utils.mlflow_helper as mh 
+import src.utils.escalation_llm as llm
+import src.utils.escalation_baseline as base
+# import src.utils.mlflow_helper as mh 
 
 from src.utils.escalation_llm import llm_escalation_batch
 from src.configuration.prompt import prompt_v1, allowed_values_v1
@@ -40,40 +42,42 @@ def escalation_check(data="version_2", mode="llm", logging=False):
     gh.load_env_vars()
 
     config = {
-        "tag": {
+        "tags": {
             "approach": f"{mode} (post_processed)", 
             "vers_approach": "v1 (batch_size=5)",
             "vers_data": "v2",
-            "vers_logic": "v1_5",
+            "vers_logic": "v2",
             "vers_flags": "v1",
             "vers_prompt": "v1",
             "vers_values": "v1",
-            "vers_json": "v1",
+            "vers_json": "v2",
                 },
         "parameter": {
             "git_commit": gh.get_git_commit(),
             "source_dataset": "synthetic",
             },
-        "artifact": {
-            "filename_data": ,
-            "filepath_data": ,
+        # "artifact": {
+        #     "filename_data": ,
+        #     "filepath_data": ,
 
         #     },
+        "mode": mode,
         "experiment_name": "escalation_clinical_reports", 
         "artifacts_location": os.getenv("MLFLOW_ARTIFACTS"),
+        "namespace": "escalation_check",
+
         "prompt": prompt_v1.strip(),
         "allowed_values": allowed_values_v1.strip(),
         "json_scheme": scheme_v1,
-        "mode": mode,
-        "namespace": "escalation_check",
         "dep_function": llm_escalation_batch,
         "dep_function_name": "llm_escalation_batch",
-        }}
+        # "escalation_rules": 
+        }
     
     # setup session 
     session.load_config(config)
     session.save_session()
-    session.save_snapshot()
+    # session.save_snapshot()
 
     # setup logger
     exp_name = config["experiment_name"]
@@ -83,59 +87,84 @@ def escalation_check(data="version_2", mode="llm", logging=False):
                 artifact_location=arti_loc
                             )
     exp_logger.setup_experiment()
-    event_logger = exp_logger.logger
+    # event_logger = exp_logger.logger
 
-    # mlflow_logging(exp_logger)
+    session.backup_dir = exp_logger.backup_dir
 
     if mode == "baseline":
+        vers_flags = session.tags.get("vers_flags", "tba")
+
         exp_logger.log_text(
-                f"red_flags/{config["vers_flags"]}.json",
+                f"red_flags/{vers_flags}.json",
                 json.dumps(RED_FLAGS,
                         indent=2, ensure_ascii=False)
                         )
 
     if mode == "llm":
+        vers_prompt = session.tags.get("vers_prompt", "tba")
+        vers_values = session.tags.get("vers_values", "tba")
+        vers_json = session.tags.get("vers_json", "tba")
+
         exp_logger.log_text(
-                f"prompts/{config["vers_prompt"]}/system_prompt.txt", 
+                f"prompts/{vers_prompt}/system_prompt.txt", 
                 config["prompt"]
                 )
 
         exp_logger.log_text(
-                f"prompts/{config["vers_values"]}/allowed_values.txt", 
+                f"prompts/{vers_values}/allowed_values.txt", 
                 config["allowed_values"]
                 )
 
         exp_logger.log_text(
-                f"json_scheme/{config["vers_json"]}.json", 
+                f"json_scheme/{vers_json}.json", 
                 json.dumps(config["json_scheme"], 
                         indent=2, ensure_ascii=False)
                         )
     
     # get data
-    df = esc.get_data_df(data)  # --> funktion definieren
+    df = esc.get_data_df(data)
 
-    df_esc, log_dict = esc.case_escalation(df)
+    if mode == "baseline":
+        df_esc = base.baseline_escalation(df)
 
-    if mode == "llm":
-        log_dict = eval.evaluate_escalation(df_esc, mode, config, log_dict)
+    elif mode == "llm":
+        df_esc = llm.llm_escalation(df)
+        eval.evaluate_escalation(df_esc)
 
+    else:
+        print(f"Unknown mode: {mode}")
+        return 
 
     if logging:
-        log_path = Path(os.getenv("PATH_LOGDICT"))
-        gh.save_dict(log_path, log_dict)
+        approach = config["tags"]["approach"]
+        run_name = f"{approach}_{session.now}"
+        exp_logger.flush(run_name)
+        session.save_snapshot()
+        exp_logger.local_backup() 
 
-        mlflow_logging(log_dict)
+    else:
+        # log_path = Path(os.getenv("PATH_LOGDICT"))
+        session.save_snapshot()
+        exp_logger.local_backup()   # log_path
 
 
-def mlflow_logging(logger, data_dict, save_json=None):
+if __name__ == "__main__":
+    escalation_check()
 
-    tags_dict = data_dict["tag"]
-    params_dict = data_dict["parameter"]
-    artifacts_set = data_dict["artifact"]
 
-    # set tags
-    for key, value in tags_dict.items():
-        logger.set_tag(key, value) 
+# -----------------------
+# 
+# ---------------------
+
+# def mlflow_logging(logger, data_dict, save_json=None):
+
+#     tags_dict = data_dict["tag"]
+#     params_dict = data_dict["parameter"]
+#     artifacts_set = data_dict["artifact"]
+
+#     # set tags
+#     for key, value in tags_dict.items():
+#         logger.set_tag(key, value) 
 
 
     # logging information on dataset
@@ -176,10 +205,6 @@ def mlflow_logging(logger, data_dict, save_json=None):
     #     print("SUCCESS")
 
 
-
-
-if __name__ == "__main__":
-    escalation_check()
 
     
 #####

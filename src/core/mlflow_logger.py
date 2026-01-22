@@ -7,7 +7,10 @@ import mlflow
 
 # from src.utils.experiment_logger_impl import ExperimentLogger
 import src.utils.general_helper as gh
-import src.utils.logger as log 
+import src.core.logger as log 
+from src.core.session import session
+import src.utils.file_helper as fh
+import src.utils.path_helper as ph
 
 # --------------
 # MLflow Experiment Logger
@@ -15,9 +18,9 @@ import src.utils.logger as log
 
 @dataclass
 class ExperimentLogger:
-    backup_dir: Path = Path(f"{gh.find_project_root()}/mlflow/backups")
     experiment_name: str
     artifact_location: Path | None = None   # field(default_factory=Path)
+    backup_dir: Path = Path(f"{ph.find_project_root()}/mlflow/backups")
     
     tags: Dict[str, object] = field(default_factory=dict)
     params: Dict[str, object] = field(default_factory=dict)
@@ -27,7 +30,7 @@ class ExperimentLogger:
     # dicts: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        root = gh.find_project_root()
+        root = ph.find_project_root()
         project_name = os.getenv("PROJECT_NAME", "default_project")
         folder = f"{root}/mlflow/logs"    
 
@@ -35,6 +38,83 @@ class ExperimentLogger:
                                         "mlflow", 
                                         folder=folder)
 
+    def load_latest_backup(self, folder: Path | None = None):
+        folder = Path(folder or self.backup_dir / self.experiment_name)
+
+        files = list(folder.glob("*_params.json"))
+        if not files:
+            raise FileNotFoundError(f"No backups found in {folder}")
+
+        latest = max(files, key=lambda p: p.stem.split("_")[0])
+        timestamp = latest.stem.replace("_params", "")
+
+        self.load_logger(folder, timestamp)
+        
+        # folder = Path(folder) or Path(self.backup_dir / self.experiment_name)
+
+        # backup = {}
+        # for name in ["params", "metrics", "texts"]:
+        #     files = list(folder.glob(f"*_{name}.json"))
+
+        #     if not files: 
+        #         raise FileNotFoundError(f"No backups of '{name}' found in {folder}")
+
+            # backup[f"{name}"] = files 
+
+
+    def load_logger(self, folder: Path, timestamp: str):
+        """
+        Load logger state (tags, params, metrics, texts) from a local backup.
+        
+        Parameters
+        ----------
+        folder : Path
+            Backup folder (e.g. mlflow/backups/<experiment_name>)
+        timestamp : str
+            Timestamp prefix used in backup filenames
+        """
+        self.logger.info("Start loading logger: {folder} | {timestamp}")
+
+        folder = Path(folder)
+        missing = False
+        attributes = ["params", "metrics", "texts", "tags"]
+
+        for attr in attributes:  
+            path = folder / f"{timestamp}_{attr}.json"  
+
+            if path.exists():
+                setattr(self, attr, fh.load_dict(path))
+
+            else:
+                self.logger.warning(f"No {attr} backup found at {path}")
+                missing = True
+
+        if missing:
+            self.logger.warning(
+                f"Not all backups found in {folder}")
+            raise FileNotFoundError()
+
+        self.logger.info(
+            f"ExperimentLogger state restored from backup "
+            f"(timestamp={timestamp})"
+        )
+        # if metrics_path.exists():
+        #     self.metrics = fh.load_dict(metrics_path)
+        # else:
+        #     self.logger.warning(f"No metrics backup found at {metrics_path}")
+        #     missing = True
+
+        # if texts_path.exists():
+        #     self.texts = fh.load_dict(texts_path)
+        # else:
+        #     self.logger.warning(f"No texts backup found at {texts_path}")
+        #     missing = True
+
+        
+        
+
+
+    
     def local_backup(self, folder=None):
         """Saves all logged data to local files for backup purposes."""
         if not folder:
@@ -42,17 +122,23 @@ class ExperimentLogger:
             # gh.ensure_dir(folder)
         # backup_dir.mkdir(parents=True, exist_ok=True)
 
+        now = session.now
+
+        # Save tags
+        tags_path = folder / f"{now}_tags.json"
+        fh.save_dict(tags_path, self.params)
+
         # Save params
-        params_path = folder / "params.json"
-        gh.save_dict(params_path, self.params)
+        params_path = folder / f"{now}_params.json"
+        fh.save_dict(params_path, self.params)
 
         # Save metrics
-        metrics_path = folder / "metrics.json"
-        gh.save_dict(metrics_path, self.metrics)
+        metrics_path = folder / f"{now}_metrics.json"
+        fh.save_dict(metrics_path, self.metrics)
 
         # Save texts
-        texts_path = folder / "texts.json"
-        gh.save_dict(texts_path, self.texts)
+        texts_path = folder / f"{now}_texts.json"
+        fh.save_dict(texts_path, self.texts)
 
         self.logger.info(f"Local backup saved to {folder}")
 
