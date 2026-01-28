@@ -1,0 +1,28 @@
+{
+    "tags": {
+        "approach": "llm",
+        "as batch": True,
+        "post-processing": True,
+        "vers_approach": "v4",
+        "vers_data": "v2",
+        "vers_logic": "v4",
+        "vers_flags": "v1",
+        "vers_prompt": "v1",
+        "vers_values": "v1",
+        "vers_json": "v1",
+    },
+    "parameter": {
+        "git_commit": gh.get_git_commit(),
+        "source_dataset": "synthetic",
+    },
+    "mode": "llm",
+    "llm_model": "openai",
+    "experiment_name": "escalation_clinical_reports",
+    "artifacts_location": os.getenv("MLFLOW_ARTIFACTS"),
+    "namespace": "escalation_check",
+    "prompt": prompt_v1.strip(),
+    "allowed_values": allowed_values_v1.strip(),
+    "json_scheme": scheme_v1,
+    "dep_function": llm_escalation_batch,
+    "dep_function_name": "llm_escalation_batch",
+}

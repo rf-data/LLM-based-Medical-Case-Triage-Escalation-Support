@@ -3,9 +3,8 @@ from pathlib import Path
 from typing import Dict, Any, Callable, List
 # import json
 
-# import src.utils.general_helper as gh
-import src.utils.file_helper as fh
-import src.utils.path_helper as ph
+# import utils.general_helper as gh
+import utils.path_helper as ph
 
 
 class Session:
@@ -21,6 +20,7 @@ class Session:
         # --- experiment context ---
         self.experiment_name: str | None = None
         self.artifacts_location: str | None = None
+        self.llm_model: str | None = None
         self.mode: str | None = None
         self.namespace: str | None = None
         self.now: str | None = None
@@ -41,9 +41,10 @@ class Session:
     # ---------- configuration ----------
     def load_config(self, config: Dict[str, Any]):
         """Load experiment-relevant configuration into session."""
-        self.mode = config.get("mode", None)
         self.experiment_name = config.get("experiment_name", None)
         self.artifacts_location = config.get("artifacts_location", None)
+        self.llm_model = config.get("llm_model", None)
+        self.mode = config.get("mode", None)
         self.namespace = config.get("namespace", None)
 
         self.tags.update(config.get("tags", {}))
@@ -68,9 +69,11 @@ class Session:
             # "SESSION_DATA": str(self.data) if self.data is not None else None,
             "SESSION_VENV": str(self.venv) if self.venv is not None else None,
             "SESSION_URL_REPO": self.url_repo if self.url_repo is not None else None,
+            "SESSION_BACKUP_DIR": self.backup_dir if self.backup_dir is not None else None,
 
             "SESSION_EXPERIMENT": self.experiment_name if self.experiment_name is not None else None,
             "SESSION_ARTIFACTS": self.artifacts_location if self.artifacts_location is not None else None,
+            "SESSION_MODEL": self.llm_model if self.llm_model is not None else None,
             "SESSION_MODE": self.mode if self.mode is not None else None,
             "SESSION_NAMESPACE": self.namespace if self.namespace is not None else None,
             "SESSION_RUNTIME": self.run_time if self.run_time is not None else None
@@ -82,6 +85,9 @@ class Session:
     
     def save_snapshot(self, folder=None):
         """Save full experiment snapshot (for MLflow / debugging)."""
+        # lazy import to prevent circular imports
+        import utils.file_helper as fh
+        
         if self.root is None:
             raise RuntimeError("Session.root must be set before saving snapshot.")
 
@@ -93,6 +99,7 @@ class Session:
         snapshot = {
             "experiment_name": self.experiment_name,
             "artifacts_location": self.artifacts_location,
+            "llm_model": self.llm_model,
             "mode": self.mode,
             "namespace": self.namespace,
             "now": self.now,
@@ -109,43 +116,3 @@ class Session:
         fh.save_dict(snapshot_path, snapshot)
 
 session = Session()
-
-
-# class Session:
-    
-
-#     # ---------- configuration ----------
-#     def load_config(self, config: Dict[str, Any]):
-#         """Load experiment-relevant configuration into session."""
-#         self.experiment_name = config.get("experiment_name")
-#         self.artifacts_location = config.get("artifacts_location")
-
-#         self.tags.update(config.get("tag", {}))
-#         self.parameters.update(config.get("parameter", {}))
-
-#         self.prompt = config.get("prompt")
-#         self.allowed_values = config.get("allowed_values")
-#         self.json_scheme = config.get("json_scheme")
-
-#     # ---------- persistence ----------
-    
-
-#     def save_snapshot(self):
-#         """Save full experiment snapshot (for MLflow / debugging)."""
-#         if self.root is None:
-#             raise RuntimeError("Session.root must be set before saving snapshot.")
-
-#         snapshot_path = Path(self.root) / "session_snapshot.json"
-
-#         snapshot = {
-#             "experiment_name": self.experiment_name,
-#             "artifacts_location": self.artifacts_location,
-#             "tags": self.tags,
-#             "parameters": self.parameters,
-#             "prompt": self.prompt,
-#             "allowed_values": self.allowed_values,
-#             "json_scheme": self.json_scheme,
-#         }
-
-#         with open(snapshot_path, "w") as f:
-#             json.dump(snapshot, f, indent=2)

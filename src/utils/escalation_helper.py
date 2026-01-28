@@ -8,15 +8,16 @@ import time
 # import mlflow
 import pandas as pd
 import json
-from src.core.mlflow_logger import get_experiment_logger
+from core.mlflow_logger import get_experiment_logger
 
 # from concurrent.futures import ThreadPoolExecutor, as_completed
-# from src.utils.escalation_baseline import baseline_escalation
-from src.core.session import session
-# from src.utils.escalation_llm import llm_escalation_single, llm_escalation_batch
-import src.utils.general_helper as gh
-# import src.utils.file_helper as fh
-import src.utils.path_helper as ph
+# from utils.escalation_baseline import baseline_escalation
+from core.session import session
+# from utils.escalation_llm import llm_escalation_single, llm_escalation_batch
+import utils.general_helper as gh
+import utils.file_helper as fh
+import utils.path_helper as ph
+from utils.model_helper import single_escalation_by_llm, batch_escalation_by_llm
 
 
 def get_data_df(data):
@@ -25,20 +26,20 @@ def get_data_df(data):
     event_logger = logger.logger
 
     # load dataset path
-    if data == "ambiguous":
+    if data == "v1 - ambiguous":
         f_path = Path(os.getenv("AMBIGUOUS_DATA"))
         f_name = "data/data_generic/reports_ambiguous.csv" 
 
-    elif data == "clear":
+    elif data == "v1 - clear":
         f_path = Path(os.getenv("CLEAR_DATA"))
         f_name = "data/data_generic/reports_clear.csv"
 
-    elif data == "version_2":
+    elif data == "v2":
         f_path = Path(os.getenv("DATA_V2"))
         f_name = "data/data_generic/escalation_dataset_v2.csv"
 
-    elif isinstance(data, Path):
-        f_path = Path(data)
+    # elif isinstance(data, Path):
+    #     f_path = Path(data)
 
     # loading texts as df --> fct file load
     df = pd.read_csv(f_path, 
@@ -55,22 +56,95 @@ def get_data_df(data):
     return df
 
 
-def save_escalation_df(df, save_df): 
-    if save_df == True:
-        now = session.now
-        mode = session.mode
-        version_run = session.tags.get("vers_approach", "tba") 
+def use_escalation_cache(*,
+                           prompt: str, 
+                           scheme: dict,
+                           allowed_values: str,
+                           namespace: str,
+                           batch_mode: bool=True):
+    
+    """
+    Factory that returns a cached escalation function.
+    
+    mode="single": fn(text: str) -> dict
+    mode="batch":  fn(texts: list[str]) -> list[dict]
+    """
 
-        folder = Path(os.getenv("PROCESSED"))
-        ph.ensure_dir(folder)
-        f_path = folder / f"reports/{now}_{mode}_{version_run}_df.csv"
-        df.to_csv(f_path)
+    if batch_mode is False:
+        def cached_single(texts: str) -> dict:
+            key = make_cache_key(texts, 
+                                 prompt, 
+                                 namespace)
+            cached = load_from_cache(key)
+            if cached is not None:
+                return cached
 
-    if isinstance(save_df, Path):
-        f_path = Path(save_df)
-        ph.ensure_dir(f_path)
+            result = single_escalation_by_llm(
+                                    text=texts,
+                                    prompt=prompt,
+                                    scheme=scheme,
+                                    allowed_values=allowed_values,
+                                )
+            
+            save_to_cache(key, result)
+            
+            return result
 
-        df.to_csv(f_path)
+        return cached_single
+    
+    elif batch_mode == True: 
+
+        def cached_batch(texts: list[str]) -> list[dict]:
+            results = [None] * len(texts)
+            missing_texts = []
+            missing_idx = []
+
+            for i, text in enumerate(texts):
+                key = make_cache_key(text, 
+                                 prompt, 
+                                 namespace)
+                cached = load_from_cache(key)
+                if cached is not None:
+                    results[i] = cached
+                else:
+                    missing_texts.append(text)
+                    missing_idx.append(i)
+
+            if missing_texts:
+                fresh = batch_escalation_by_llm(
+                    texts=missing_texts,
+                    prompt=prompt,
+                    scheme=scheme,
+                    allowed_values=allowed_values,
+                )
+
+                for idx, res in zip(missing_idx, fresh):
+                    key = make_cache_key(texts[idx], 
+                                        prompt, 
+                                        namespace)
+                    save_to_cache(key, res)
+                    results[idx] = res
+
+            return results
+        
+        return cached_batch
+    
+    else:
+        raise ValueError(f"Unknown mode: {batch_mode}")
+
+
+def save_escalation_df(df): 
+    # if save_df == True:
+    now = session.now
+    mode = session.mode
+    version_run = session.tags.get("vers_approach", "tba") 
+
+    folder = os.getenv("PATH_PROCESSED")
+    ph.ensure_dir(folder)
+    
+    f_path = Path(f"{folder}/reports/{now}_{mode}_{version_run}_df.csv")
+    ph.ensure_dir(f_path)
+    df.to_csv(f_path)
 
 
 def df_iteration(df, fct_escalate):
@@ -79,37 +153,64 @@ def df_iteration(df, fct_escalate):
     event_logger = logger.logger
 
     now = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    event_logger.info(f"Start processing reports: {now}")
+    event_logger.info("Start processing reports: %s", now)
     session.now = now
-    session.save_session()
+    mode = session.mode
+    # session.save_session()
 
     start = time.perf_counter()
     all_results = []
     
-    for i, chunk in enumerate(gh.iter_chunks(df, chunk_size=25), start=1):
-        event_logger.info(f"Processing chunk {i}")
+    if mode == "llm":
+        for i, chunk in enumerate(gh.iter_chunks(df, chunk_size=25), 
+                                  start=1):
+            event_logger.info("Processing chunk %s", i)
 
-        event_logger.info(f"'Chunk' columns:\n{chunk.columns.tolist()}")
+            event_logger.info("'Chunk' columns:\n%s", 
+                              chunk.columns.tolist())
 
-        texts = chunk["report_text"].tolist()
+            texts = chunk["report_text"].tolist()
 
-        chunk_results = batch_apply(
-                                texts=texts,
-                                fn=fct_escalate,
-                                batch_size=5
-                                    ) 
-        
-        assert isinstance(chunk_results, list)
-        assert all(isinstance(r, dict) for r in chunk_results)
-        # if isinstance(chunk_results, dict):
-        #     chunk_results = [chunk_results]
+            chunk_results = batch_apply(
+                                    texts=texts,
+                                    fn=fct_escalate,
+                                    batch_size=5
+                                        ) 
             
-        all_results.extend(chunk_results)
+            assert isinstance(chunk_results, list)
+            assert all(isinstance(r, dict) for r in chunk_results)
+            
+            # if isinstance(chunk_results, dict):
+            #     chunk_results = [chunk_results]
+                
+            all_results.extend(chunk_results)
+
+    elif mode == "rule":
+        texts = df["report_text"].tolist()
+        for i, txt in enumerate(texts):
+            result = fct_escalate(txt)
+            all_results.append(result)
 
     elapsed = time.perf_counter() - start
     
+    # creating + cleaning df
     result_df = pd.DataFrame(all_results)
-    event_logger.info(f"\n[CHECK] 'result_df' columns:\n{result_df.columns.tolist()}\n")
+
+    if mode == "llm": 
+        UNCERTAINTY_TO_CONF = {
+                            "low": 0.85,
+                            "medium": 0.6,
+                            "high": 0.3,
+                        }
+        
+        result_df["confidence_derived"] = (result_df["uncertainty_level"])\
+                                            .map(UNCERTAINTY_TO_CONF) 
+        result_df["risk_factors"] = result_df["risk_factors"].apply(fh.parse_list_str)
+        result_df["missing_information"] = result_df["missing_information"].apply(fh.parse_list_str)
+        # result_df_corr = normalize_escalation_df(result_df)
+
+    # logging
+    event_logger.info("\n[CHECK] 'result_df' columns:\n %s\n", result_df.columns.tolist())
 
     logger.log_metric("runtime_total_sec", 
                       elapsed)
@@ -121,6 +222,39 @@ def df_iteration(df, fct_escalate):
     
     return result_df
 
+# def normalize_escalation_df(df: pd.DataFrame) -> pd.DataFrame:
+#     # --- numeric ---
+#     numeric_cols = [
+#         "confidence",
+#         "confidence_derived",
+#     ]
+
+#     for col in numeric_cols:
+#         if col in df.columns:
+#             df[col] = pd.to_numeric(df[col], errors="coerce")
+
+#     # --- categorical / strings ---
+#     str_cols = [
+#         "severity",
+#         "uncertainty_level",
+#         "expected_action",
+#     ]
+
+#     for col in str_cols:
+#         if col in df.columns:
+#             df[col] = df[col].astype(str).str.strip().str.lower()
+
+#     # --- boolean targets ---
+#     bool_cols = [
+#         "expected_action_llm",
+#         "expected_action_final",
+#     ]
+
+#     for col in bool_cols:
+#         if col in df.columns:
+#             df[col] = df[col].astype("boolean")
+
+#     return df
 
 def make_cache_key(report_text: str, 
                    prompt: str, 
@@ -134,7 +268,8 @@ def make_cache_key(report_text: str,
 
 def load_from_cache(key: str, cache_dir: Path=None):
     if not cache_dir:
-        cache_dir = Path(os.getenv("CACHE_DIR"))
+        folder = os.getenv("CACHE_DIR")
+        cache_dir = Path(f"{folder}")
     
     fn = cache_dir / f"{key}.json"
     ph.ensure_dir(fn)
@@ -153,21 +288,6 @@ def save_to_cache(key: str, data: dict, cache_dir: Path=None):
     
     with open(fn, "w") as f:
         json.dump(data, f, indent=2)
-
-
-def normalize_result(res: dict) -> dict:
-    """
-    Enforces a stable result schema for downstream code.
-    """
-    return {
-        "expected_action": bool(
-            res.get("expected_action")
-            if "expected_action" in res
-            else res.get("escalation_required", True)
-        ),
-        "confidence": float(res.get("confidence", 0.0)),
-        "uncertainty_level": str(res.get("uncertainty_level", "unknown")),
-    }
 
 
 def batch_apply(

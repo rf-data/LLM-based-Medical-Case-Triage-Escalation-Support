@@ -10,8 +10,18 @@ scheme_v1 = {
 
 scheme_v2 = {
         "severity": "low | medium | high",
-        "uncertainty": "low | medium | high",
+        "uncertainty_level": "low | medium | high",
         "risk_factors": ["string"],
         "missing_information": ["string"],
         "confidence": 0.0
         }
+'''
+scheme_v3 = {
+        "escalation_needed": True,
+        "severity": "low | medium | high",
+        "uncertainty": "low | medium | high",
+        "risk_factors": ["string"],
+        "missing_information": ["string"],
+        "confidence": 0.0
+        }         
+'''

@@ -3,9 +3,10 @@ import logging
 import sys
 import os
 from pathlib import Path 
+from datetime import datetime 
 
-import src.utils.general_helper as gh 
-import src.utils.path_helper as ph
+import utils.general_helper as gh 
+import utils.path_helper as ph
 
 def has_file_handler(logger, log_path):
     for h in logger.handlers:
@@ -13,6 +14,38 @@ def has_file_handler(logger, log_path):
             if Path(h.baseFilename) == Path(log_path):
                 return True
     return False
+
+def log_header(logger, title: str, level="info"):
+    """
+    Aufruf: log_header(self.logger, "START ESCALATION CHECK")
+    """
+    header = (
+        "\n"
+        + "=" * 50 + "\n"
+        + f"--- {title} --- {datetime.now():%Y-%m-%d %H:%M:%S} ---\n"
+        + "=" * 50
+    )
+
+    getattr(logger, level)(header)
+
+def log_section(logger, title):
+    """
+    Header als Ereignis
+    """
+    logger.info("")
+    logger.info("=" * 50)
+    logger.info(
+        "--- %s --- %s ---",
+        title, 
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+    logger.info("=" * 50 + "\n")
+
+    # else:
+    #     print("\n")
+    #     print("=" * 50 + "\n")
+    #     print(f"--- {title} --- {datetime.now():%Y-%m-%d %H:%M:%S} ---\n")
+    #     print("=" * 50 + "\n")
 
 
 def create_logger(name: str,

@@ -8,7 +8,7 @@ from typing import Callable, Iterable
 import inspect
 import hashlib
 
-from src.core.session import session
+from core.session import session
 
 def snapshot_single_function(fn: Callable) -> dict:
     src = inspect.getsource(fn)
