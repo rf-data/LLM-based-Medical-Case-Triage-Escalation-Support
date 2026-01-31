@@ -35,6 +35,8 @@ def escalate_by_llm(df_input):
     result_df = esc.df_iteration(df, fct_escalate)
     result_df_re = result_df.rename(columns={"expected_action": "expected_action_llm"}).copy()
     result_df_re["expected_action"] = df["expected_action"]
+    result_df_re["clarity"] = df["clarity"]
+    result_df_re["domain"] = df["domain"]
 
     # df[f"risk_factors ({mode}_{version_run})"] = result_df["risk_factors"]
     # df[f"missing_information ({mode}_{version_run})"] = result_df["missing_information"]

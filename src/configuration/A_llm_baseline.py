@@ -1,4 +1,4 @@
-from utils.model_helper import batch_escalation_by_llm
+from utils.llm_helper import batch_escalation_by_llm
 from configuration.prompt import prompt_v1, allowed_values_v1
 from configuration.json_scheme import scheme_v1
 import os

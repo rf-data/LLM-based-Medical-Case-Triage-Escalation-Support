@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
-# import pandas as pd
+import numpy as np
+import pandas as pd
 
 from core.session import session
 from core.mlflow_logger import get_experiment_logger
@@ -150,8 +151,9 @@ def evaluate_llm_fn_fp(df, filter_cols=None, extract_cols=None, folder=None, spl
     event_logger = exp_logger.logger
 
     if filter_cols is None:
-        filter_cols = ["n_risk_factors", "n_missing_information", "severity", 
-                "confidence", "uncertainty_level", "confidence_derived"]
+        filter_cols = ["domain", "clarity", "n_risk_factors", 
+                       "n_missing_information", "severity", 
+                        "confidence", "uncertainty_level", "confidence_derived"]
     
     subapproach = session.tags.get("subapproach", None)
 
@@ -188,6 +190,18 @@ def evaluate_llm_fn_fp(df, filter_cols=None, extract_cols=None, folder=None, spl
             df_grouped.to_csv(f_path_grouped)
 
     return df_dict
+
+def extract_fn_fp_logreg(y_test, y_pred):
+    false_dict = {}
+    false_dict["false_negative"] = np.where((y_test.values == 1) & 
+                                            (y_pred == 0))[0]
+    false_dict["false_postive"] = np.where((y_test.values == 0) & 
+                                           (y_pred == 1))[0]
+
+    # save idx
+    fh.save_dict(false_dict)
+
+    return false_dict
 
 def extract_fn_fp(df, cols, enlabel_dict, split_value=None):
     if split_value:

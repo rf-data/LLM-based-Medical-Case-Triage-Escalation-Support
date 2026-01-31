@@ -4,11 +4,13 @@ from typing import Dict, Any, Callable, List
 # import json
 
 # import utils.general_helper as gh
-import utils.path_helper as ph
 
 
 class Session:
     def __init__(self):
+        # as lazy import to prevent circular imports
+        import utils.path_helper as ph
+        
         # --- runtime / env ---
         self.env = None
         self.branch = None
@@ -34,6 +36,7 @@ class Session:
         self.json_scheme: Dict[str, Any] | None = None
         self.dep_function: Callable | None = None
         self.dep_function_name: str | None = None
+        self.preprocess_function: Callable | None = None
         self.run_time: List | None = None
 
         self.env_loaded = False
@@ -55,6 +58,7 @@ class Session:
         self.json_scheme = config.get("json_scheme", None)
         self.dep_function = config.get("dep_function", None)
         self.dep_function_name = config.get("dep_function_name", None)
+        self.preprocess_function = config.get("preprocess_function", None)
         
     # ---------- persistence ----------
     def save_session(self):
@@ -110,7 +114,8 @@ class Session:
             "json_scheme": self.json_scheme,
             "dep_function": self.dep_function,
             "dep_function_name": self.dep_function_name,
-            "run_time": self.run_time
+            "run_time": self.run_time,
+            "preprocess_function": self.preprocess_function
         }
 
         fh.save_dict(snapshot_path, snapshot)

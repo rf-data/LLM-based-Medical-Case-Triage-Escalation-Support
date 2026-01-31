@@ -15,8 +15,8 @@ import utils.decision_helper as dh
 
 from B1_rule_escalation import escalate_by_rule
 from B2_llm_escalation import escalate_by_llm
-from C_llm_postprocess import postprocess_escalation
-from D_evaluation import evaluate_escalation
+from C1_llm_postprocess import postprocess_escalation
+from D1_evaluation import evaluate_escalation
 # import utils.mlflow_helper as mh 
 
 
@@ -25,7 +25,7 @@ from configuration.red_flags import RED_FLAGS
 
 from core.session import session
 from core.mlflow_logger import get_experiment_logger
-from configuration.A_rule_baseline import config
+from configuration.B4_llm_post import config
 
 # --------------
 # MAIN FUNCTION
@@ -129,6 +129,7 @@ def escalate_reports(logging=False):
         esc.save_escalation_df(df_esc)
 
     elif mode == "llm":
+        # if subapproach == "postprocessing":
         df_esc = escalate_by_llm(df)
         df_post = postprocess_escalation(df_esc)
         df_dict = dh.evaluate_llm_fn_fp(df_post)
@@ -136,7 +137,11 @@ def escalate_reports(logging=False):
         pred_column = ("expected_action_final" 
                        if subapproach != "baseline" 
                        else "expected_action_llm")
-        evaluate_escalation(df_dict["all"], pred_column)
+        
+        # encode ?
+        y_true, y_pred = eval.encode_labels(df_dict["all"], pred_column)
+
+        evaluate_escalation(y_true, y_pred)
 
         esc.save_escalation_df(df_post)
 

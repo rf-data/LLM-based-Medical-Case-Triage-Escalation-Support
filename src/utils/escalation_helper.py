@@ -17,7 +17,7 @@ from core.session import session
 import utils.general_helper as gh
 import utils.file_helper as fh
 import utils.path_helper as ph
-from utils.model_helper import single_escalation_by_llm, batch_escalation_by_llm
+from utils.llm_helper import single_escalation_by_llm, batch_escalation_by_llm
 
 
 def get_data_df(data):

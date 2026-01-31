@@ -27,6 +27,7 @@ class ExperimentLogger:
     metrics: Dict[str, float] = field(default_factory=dict)
     artifacts: List[str] = field(default_factory=list)
     texts: Dict[str, str] = field(default_factory=dict)
+    # _model: Dict[str, object] = field(default_factory=dict)
     # dicts: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -49,18 +50,7 @@ class ExperimentLogger:
         timestamp = latest.stem.replace("_params", "")
 
         self.load_logger(folder, timestamp)
-        
-        # folder = Path(folder) or Path(self.backup_dir / self.experiment_name)
-
-        # backup = {}
-        # for name in ["params", "metrics", "texts"]:
-        #     files = list(folder.glob(f"*_{name}.json"))
-
-        #     if not files: 
-        #         raise FileNotFoundError(f"No backups of '{name}' found in {folder}")
-
-            # backup[f"{name}"] = files 
-
+    
 
     def load_logger(self, folder: Path, timestamp: str):
         """
@@ -146,6 +136,14 @@ class ExperimentLogger:
     def log_metric(self, key: str, value: float):
         self.metrics[key] = value
 
+    def log_model(self, model_name, model, exemple_df):
+        mlflow.sklearn.log_model(
+                    sk_model=model,
+                    name=model_name,
+                    # artifact_path=path,
+                    input_example=exemple_df.iloc[:5]
+                    )
+        
     def log_param(self, key: str, value: object):
         self.params[key] = value
 
@@ -170,9 +168,8 @@ class ExperimentLogger:
                     artifact_location=str(self.artifact_location)
                                     )
 
-        self.logger.info(
-                f"Setting up MLflow experiment: {self.experiment_name}"
-                        )
+        self.logger.info("Setting up MLflow experiment: %s", 
+                        self.experiment_name)
         
         mlflow.set_experiment(self.experiment_name)
 
@@ -224,8 +221,8 @@ class ExperimentLogger:
                 mlflow.set_tag(k, v)
                 self.logger.info(f"[TAG] {k}={v}")
 
-            self.logger.info(
-                    f"MLflow run finished successfully: {run_name} ({run_id})"
+            self.logger.info("MLflow run finished successfully: %s (%s)", 
+                             run_name, run_id
                             )
 
 # ---------------

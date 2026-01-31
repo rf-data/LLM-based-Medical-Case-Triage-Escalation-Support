@@ -1,22 +1,46 @@
-from dataclasses import dataclass, field
-from typing import Dict, List
+# from dataclasses import dataclass, field
+# from typing import Dict, List
 import os
 from pathlib import Path 
 import mlflow
 # import json
 from datetime import datetime
+from joblib import dump #, load
+# import pandas as pd
 # import logging
 # import inspect
 from mlflow.tracking import MlflowClient
 
-import src.utils.general_helper as gh
 import src.utils.path_helper as ph
+import src.utils.general_helper as gh
+# from core.session import session
 from src.core.logger import create_logger
+from core.mlflow_logger import get_experiment_logger
+
+
+def save_model(model, model_name, folder=None):
+    # setup logger
+    exp_logger = get_experiment_logger()
+    event_logger = exp_logger.logger
+
+    # 
+    if folder is None:
+        folder = os.getenv("PATH_MODEL")
+
+    ph.ensure_dir(folder)
+    model_path = Path(f"{folder}/{model_name}.joblib")
+    dump(model, model_path)
+
+    # logging
+    event_logger.info("Model saved as '.../%s'", ph.shorten_path(model_path))
+
+    return
 
 
 def create_mlflow_client(initial=False):
     # configuration - initial setup
     gh.load_env_vars()
+    
     database = os.getenv("MLFLOW_TRACKING_URI")
     mlflow.set_tracking_uri(database) 
 

@@ -13,13 +13,10 @@ import utils.evaluation_helper as eval
 from core.session import session
 from core.mlflow_logger import get_experiment_logger
 
-def evaluate_escalation(df, pred_column):
+def evaluate_escalation(y_true, y_pred):
     # setup logger
     exp_logger = get_experiment_logger()
     event_logger = exp_logger.logger
-
-    # encode ?
-    y_true, y_pred = eval.encode_labels(df, pred_column)
 
     # create ClassReport, ConfMatrix, ClassMetrics
     report = eval.create_classification_report(y_true, y_pred)
