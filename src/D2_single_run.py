@@ -16,8 +16,8 @@ def single_run(X, y, model):
     event_logger = exp_logger.logger
 
     random_state=session.parameters.get("random_state", 42)
-    num_feats=session.?
-    cat_feats=session.?
+    num_feats=session.num_feats
+    cat_feats=session.cat_feats
 
     (X_train, X_test,
     y_train, y_test) = train_test_split(
@@ -54,7 +54,7 @@ def single_run(X, y, model):
     # y_proba = pipe.predict_proba(X_test)[:, 1]
 
     # evaluate results
-    best_t, thresh_df = eval.threshold_sweep_analysis(model, X_test, X_train, y_train, metric="f2")
+    best_t, thresh_df = eval.threshold_sweep_analysis(model, X_train, y_train, metric="f2")
 
     thresh_path = ph.create_save_path("thresh_df", "_thresh_df", ".csv")
     thresh_df.to_csv(thresh_path)

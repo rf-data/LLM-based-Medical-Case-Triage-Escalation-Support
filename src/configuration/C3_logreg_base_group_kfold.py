@@ -7,7 +7,7 @@ config = {
     "tags": {
         "approach": "LogReg",
         "subapproach": "baseline",
-        "vers_approach": "v2",
+        "vers_approach": "v3",
         "vers_data": "v2",
         "vers_logic": "llm v4",
         "vers_preprocess": "v1"
@@ -22,9 +22,10 @@ config = {
         "model_name": "LogReg_OHE",
         "model_version": "v1", 
         "model_id": "m-206ce16a51214e629b162c488d9a1ed4",
+        "cross_validate": "Yes",
         "group_split": "Yes",
-        "n_shuffle_splits": 50, 
-        "n_folds": None, 
+        "split_mode": "group_kfold",
+        "n_splits": 5,
     },
     "mode": "LogReg",
     "preprocess_function": prepare_reports,

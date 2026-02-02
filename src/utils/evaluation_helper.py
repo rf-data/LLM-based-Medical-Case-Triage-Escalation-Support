@@ -26,12 +26,12 @@ from core.session import session
 
 import numpy as np
 
-def compile_roc_pr_auc(y_test, y_proba, data_viz=False):
+def compile_roc_pr_auc(y_test, y_proba, data_viz=False, split_id=False):
     # setup logger
     exp_logger = get_experiment_logger()
     event_logger = exp_logger.logger
 
-    roc_auc = roc_auc_score(y_test, y_proba)
+    roc_auc = roc_auc_score(y_test, y_proba) if y_test.nunique() > 1 else None
     pr_auc = average_precision_score(y_test, y_proba)
 
     # logging
@@ -42,8 +42,13 @@ def compile_roc_pr_auc(y_test, y_proba, data_viz=False):
     event_logger.info("PR-AUC: %.4f", pr_auc)
 
     if data_viz == True:
-        pr_path = ph.create_save_path("plots", "_pr_curve", ".png")
-        roc_path = ph.create_save_path("plots", "_roc_auc", ".png")
+        if split_id:
+            pr_path = ph.create_save_path("plots", f"_pr_curve_{split_id}", ".png")
+            roc_path = ph.create_save_path("plots", f"_roc_auc_{split_id}", ".png")
+
+        else: 
+            pr_path = ph.create_save_path("plots", "_pr_curve", ".png")
+            roc_path = ph.create_save_path("plots", "_roc_auc", ".png")
 
         viz.create_roc_auc(y_test, y_proba, roc_path)
         viz.create_pr_curve(y_test, y_proba, pr_path)
@@ -55,8 +60,7 @@ def compile_roc_pr_auc(y_test, y_proba, data_viz=False):
             "PR_AUC": pr_auc}
 
 
-def save_coef_df(num_feats, cat_feats, 
-                pipe=None, model=None):
+def save_coef_df(pipe=None, model=None):
     # setup logger
     exp_logger = get_experiment_logger()
     event_logger = exp_logger.logger
@@ -72,6 +76,9 @@ def save_coef_df(num_feats, cat_feats,
     else:
         event_logger.info("Please, provide a trained model or a pipeline containing a model training")  
         return
+    
+    num_feats = session.parameters.get("num_feats")
+    cat_feats = session.parameters.get("cat_feats")
     
     cat_feat_names = ohe.get_feature_names_out(cat_feats)
     feat_names = (num_feats + 
@@ -95,96 +102,66 @@ def save_coef_df(num_feats, cat_feats,
     return coef_df
 
 
-def create_cv_metrics(df, cols=None, metrics=None):
-    # setup logger
-    exp_logger = get_experiment_logger()
-    event_logger = exp_logger.logger
-
-    if cols is None:
-        cols = ["n_test", "pos_rate", 
-                "roc_auc", "pr_auc", 
-                "precision", "recall", 
-                "f1", "f2"]
-    
-    if metrics is None:
-        metrics= ["mean", "std", "min", "max"]
-    
-    summary = df[cols].agg(metrics).copy()
-
-    # log + save 'summary'
-    f_path = ph.create_save_path("cv_metrics", 
-                                 "_cv_metrics", 
-                                 ".csv")
-    summary.to_csv(f_path)
-    exp_logger.log_artifact(f_path)
-
-    return 
-
-# def add_metrics_to_cv_dict(split_data, model):
-    
-#     for _, data in split_data.items():
-#         X_train = data["X_train"]
-#         y_train = data["y_train"]
-#         X_test = data["X_test"]
-#         y_test = data["y_test"]
-
-#         model.fit(X_train, y_train)
-
-#         y_proba = model.predict_proba(X_test)[:, 1]
-#         y_pred = (y_proba >= 0.5).astype(int)
-#             # "y_proba": y_proba,
-#             # "y_pred": y_pred
-
-#         data["roc_auc"] = roc_auc_score(y_test, y_proba) if y_test.nunique() > 1 else None,
-#         data["pr_auc"] = average_precision_score(y_test, y_proba)
-#         data["precision"] = precision_score(y_test, y_pred, zero_division=0)
-#         data["recall"] = recall_score(y_test, y_pred, zero_division=0)
-#         data["f1"] = f1_score(y_test, y_pred, zero_division=0)
-
-#     return pd.DataFrame(split_data.values())
-
-
-# def evaluate_cv_metrics(df, metrics_dict):
-#     # metrics = metrics_dict.keys()
-#     # method = 
-
-#     summary = df.agg(metrics_dict)
-#     # ["mean", "std", "min", "max"])
-#     print(summary)
-#     return 
-    
-
-
-
-# def F2_sweep(model, X_train, y_train, val_split=True):
-#     if val_split == True:
-#         y_val, y_proba_val = validation_split(model, X_train, y_train)
-
-#     elif val_split == False:
-#         # CrossVal folgt
-#         cv = ""
-    
-#     # sweep on val
-#     thresh_df, best_row = threshold_sweep_analysis(y_val, y_proba_val)
-#     best_t = best_row["threshold"]
-
-#     # final eval on test (fixed threshold!)
-#     test_proba = model.predict_proba(X_test)[:, 1]
-#     y_test_hat = (test_proba >= best_t).astype(int)
-
-#     return 
-
 def threshold_sweep_analysis(model, X_train, y_train, metric):
     # setup logger
     exp_logger = get_experiment_logger()
     event_logger = exp_logger.logger
 
-    y_val, y_proba_val = eval.validation_split(model, X_train, y_train)
-    thresh_df = eval.create_threshold_df(y_val, y_proba_val)
-    best_row = eval.find_optimal_thresh(thresh_df, metric)
+    y_val, y_proba_val = validation_split(model, X_train, y_train)
+    thresh_df = create_threshold_df(y_val, y_proba_val)
+    best_row = find_optimal_thresh(thresh_df, metric)
     best_t = best_row["threshold"]
 
     return best_t, thresh_df
+
+
+def evaluate_result_df(df_in, cols=None, metrics=None, save=False):
+    # setup logger
+    exp_logger = get_experiment_logger()
+    event_logger = exp_logger.logger
+
+    if cols is None:
+        cols = ["n_test", "part_test",
+                "pos_rate", "best_t", 
+                "roc_auc", "pr_auc", 
+                "precision", "recall", 
+                "f1", "f2"]
+    
+    if metrics is None:
+        metrics = ["count", "mean", "median", "std", "min", "max"]
+
+    if "roc_auc" in cols:
+        event_logger.info(
+                    "ROC-AUC defined in %d / %d splits",
+                    df_in["roc_auc"].notna().sum(),
+                    len(df_in)
+                        )
+
+    df_sel = df_in[cols].apply(pd.to_numeric, errors="coerce").copy()
+
+    assert df_sel.select_dtypes(include="object").empty
+
+    # core statistics
+    stats = df_sel.agg(metrics)
+
+    # quantiles
+    quantiles = df_sel.quantile([0.05, 0.10, 0.25, 0.75, 0.90, 0.95])
+    quantiles.index = [f"q{int(q*100)}" for q in quantiles.index]
+    quantiles.loc["IQR"] = quantiles.loc["q75"] - quantiles.loc["q25"]
+
+    # combine
+    result_df = pd.concat([stats, quantiles])
+
+    # log + save 'df'
+
+    if save:
+        f_path = ph.create_save_path("cv_metrics", 
+                                    "_cv_metrics", 
+                                    ".csv")
+        result_df.to_csv(f_path)
+        exp_logger.log_artifact(f_path)
+
+    return result_df
 
 
 def validation_split(model, X_train, y_train):
@@ -257,25 +234,25 @@ def find_optimal_thresh(thresh_df, metric="f2"):
 
     return best_row 
 
-def find_min_thresh(target_metric, target_value, thresh_df):
-    # setup logger
-    exp_logger = get_experiment_logger()
-    event_logger = exp_logger.logger
+# def find_min_thresh(target_metric, target_value, thresh_df):
+#     # setup logger
+#     exp_logger = get_experiment_logger()
+#     event_logger = exp_logger.logger
 
-    # filter df
-    candidates = thresh_df[thresh_df[f"{target_metric}"] >= target_value]
+#     # filter df
+#     candidates = thresh_df[thresh_df[f"{target_metric}"] >= target_value]
     
-    # find idx
-    min_thresh = candidates["threshold"].idxmin()
+#     # find idx
+#     min_thresh = candidates["threshold"].idxmin()
 
 
-    # logging
-    event_logger.info("Lowest threshold for %s >= %s: %s", 
-                      target_metric, 
-                      target_value, 
-                      min_thresh)
+#     # logging
+#     event_logger.info("Lowest threshold for %s >= %s: %s", 
+#                       target_metric, 
+#                       target_value, 
+#                       min_thresh)
     
-    return 
+#     return 
 
 # print("Threshold for recall>=0.95:", choice)
     
@@ -367,6 +344,73 @@ def create_confusion_matrix(y_true, y_pred):
     exp_logger.log_metric("false_positives", fp)
 
     return cm
+
+
+def evaluate_run(X_train, X_test, y_train, y_test, model, split_id="n.a."):
+        # 1.initial evaluation
+        y_proba = model.predict_proba(X_test)[:, 1]
+        y_hat = (y_proba >= 0.5).astype(int)
+
+        n_test = len(y_test)
+        n_train = len(y_train)
+        part_test = float(n_test / (n_test + n_train))
+
+        split_mode = session.parameters.get("split_mode", "tba")
+        result = {
+            "split": split_id,
+            "split_mode": split_mode,
+            "n_test": n_test,
+            "part_test": part_test,
+            "pos_rate": y_test.mean(),
+            "roc_auc": roc_auc_score(y_test, y_proba) if y_test.nunique() > 1 else None,
+            "pr_auc": average_precision_score(y_test, y_proba), 
+            "precision": precision_score(y_test, y_hat, zero_division=0), 
+            "recall": recall_score(y_test, y_hat, zero_division=0),
+            "f1": f1_score(y_test, y_hat, zero_division=0),
+            "f2": fbeta_score(y_test, y_hat, beta=2, zero_division=0),
+        }
+
+        # 2. Threshold sweep (inner validation!)
+        best_t, thresh_data = threshold_sweep_analysis(
+                                                    model, 
+                                                    X_train, 
+                                                    y_train, 
+                                                    metric="f2"
+                                                    )
+
+        result["best_t"] = best_t
+        thresh_data["split_id"] = split_id
+        
+        # 3. Final evaluation on test
+        model.fit(X_train, y_train)
+
+        y_proba_new= model.predict_proba(X_test)[:, 1]
+        y_hat_new = (y_proba_new >= best_t).astype(int)
+
+        roc_pr_auc = compile_roc_pr_auc(
+                                    y_test, 
+                                    y_proba_new, 
+                                    data_viz=True,
+                                    split_id=split_id
+                                    ) 
+                           
+        best_t_metrics = {
+            "split": split_id,
+            "split_mode": split_mode,
+            "n_test": n_test,
+            "part_test": f"{part_test:.4f}",
+            "pos_rate": y_test.mean(),
+            "roc_auc": roc_pr_auc["ROC_AUC"], 
+            "pr_auc": roc_pr_auc["PR_AUC"], 
+            "precision": precision_score(y_test, y_hat_new, zero_division=0), 
+            "recall": recall_score(y_test, y_hat_new, zero_division=0),
+            "f1": f1_score(y_test, y_hat_new, zero_division=0),
+            "f2": fbeta_score(y_test, y_hat_new, beta=2, zero_division=0),
+        }
+
+        save_coef_df(model)
+        
+        return result, thresh_data, best_t_metrics
 
 
 def create_metrics(y_true, y_pred):

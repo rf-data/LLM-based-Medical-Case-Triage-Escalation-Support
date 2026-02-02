@@ -21,7 +21,9 @@ config = {
         "random_state": 42,
         "model_name": "LogReg_OHE",
         "model_version": "v1", 
-        "model_id": "m-206ce16a51214e629b162c488d9a1ed4"
+        "model_id": "m-206ce16a51214e629b162c488d9a1ed4",
+        "cross_validate": "No",
+        "group_split": "No"
     },
     "mode": "LogReg",
     "preprocess_function": prepare_reports,

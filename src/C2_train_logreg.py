@@ -15,7 +15,6 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 from core.mlflow_logger import get_experiment_logger
 from core.session import session
-from configuration.C2_logreg_base_shuflle_split_cv import config, num_feats, cat_feats
 import utils.preprocess_helper as pre
 import utils.general_helper as gh
 # import utils.evaluation_helper as eval
@@ -24,10 +23,12 @@ import utils.general_helper as gh
 # import utils.file_helper as fh
 # from D1_evaluation import evaluate_escalation
 from D2_single_run import single_run
-from D3_shuffle_split_cv import shuffle_split_cv
-from D4_group_aware_cv import group_aware_cv
+from D3_group_split_cv import group_split_cv
+# from D4_group_aware_cv import group_aware_cv
 
 
+# --- DEFINE CONFIGURATION FILE ----------------------
+from configuration.C3_logreg_base_group_kfold import config, num_feats, cat_feats
 # ----------------------------------------------------
 
 # define paths and other arguments
@@ -54,13 +55,14 @@ def logreg_training(logging=False):
     max_iter = session.parameters.get("max_iter")
     solver = session.parameters.get("solver")
     random_state=session.parameters.get("random_state", 42)
-    # cross_validate=session.parameters.get("cross_validate", "tba")
+    cross_validate=session.parameters.get("cross_validate", "tba")
+    # cv_type=session.parameters.get("cv_type", "tba")
     group_split=session.parameters.get("group_split", "tba")
-    n_shuffle_splits=session.parameters.get("n_shuffle_splits")
-    n_folds=session.parameters.get("n_folds")
+    # n_shuffle_splits=session.parameters.get("n_shuffle_splits")
+    # n_folds=session.parameters.get("n_folds")
 
-    session.num_feats = num_feats
-    session.cat_feats = cat_feats
+    session.parameters["num_feats"] = num_feats
+    session.parameters["cat_feats"] = cat_feats
     session.save_session()
 
     # setup logger
@@ -110,18 +112,8 @@ def logreg_training(logging=False):
     X[num_feats] = X[num_feats].astype("float64")
 
     # print(f"[DEBUG] 'cross_validate' = {cross_validate}\t'group_split' = {group_split}")
-    if group_split == "Yes":
-        if n_shuffle_splits and n_shuffle_splits > 1:
-            shuffle_split_cv(X, y, pipe, as_group=True)
-        
-        elif n_folds and n_folds > 1: 
-            group_aware_cv(X, y, pipe)
-
-        else: 
-            event_logger.error("Invalid Conditions: group_split=%s\tn_shuffle_splits=%s\tn_folds=%s",
-                               group_split,
-                               n_shuffle_splits,
-                               n_folds)
+    if cross_validate == "Yes" and group_split == "Yes":     # group_split 
+        group_split_cv(X, y, pipe)
 
     else: 
         single_run(X, y, pipe)
