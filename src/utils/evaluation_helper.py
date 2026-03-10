@@ -3,9 +3,6 @@ import json
 import pandas as pd
 from pathlib import Path
 import os
-from sklearn.model_selection import (train_test_split, 
-                                     GroupKFold, 
-                                     GroupShuffleSplit)
 from sklearn.metrics import (precision_recall_fscore_support,
                              classification_report, 
                              confusion_matrix,
@@ -43,12 +40,12 @@ def compile_roc_pr_auc(y_test, y_proba, data_viz=False, split_id=False):
 
     if data_viz == True:
         if split_id:
-            pr_path = ph.create_save_path("plots", f"_pr_curve_{split_id}", ".png")
-            roc_path = ph.create_save_path("plots", f"_roc_auc_{split_id}", ".png")
+            pr_path = ph.create_save_path("plots", f"pr_curve_{split_id}", ".png")
+            roc_path = ph.create_save_path("plots", f"roc_auc_{split_id}", ".png")
 
         else: 
-            pr_path = ph.create_save_path("plots", "_pr_curve", ".png")
-            roc_path = ph.create_save_path("plots", "_roc_auc", ".png")
+            pr_path = ph.create_save_path("plots", "pr_curve", ".png")
+            roc_path = ph.create_save_path("plots", "roc_auc", ".png")
 
         viz.create_roc_auc(y_test, y_proba, roc_path)
         viz.create_pr_curve(y_test, y_proba, pr_path)
@@ -60,7 +57,7 @@ def compile_roc_pr_auc(y_test, y_proba, data_viz=False, split_id=False):
             "PR_AUC": pr_auc}
 
 
-def save_coef_df(pipe=None, model=None):
+def create_coef_df(pipe=None, model=None, save=None):
     # setup logger
     exp_logger = get_experiment_logger()
     event_logger = exp_logger.logger
@@ -91,28 +88,16 @@ def save_coef_df(pipe=None, model=None):
             .sort_values("coef", ascending=False)
     
     # save coefs as df
-    now = session.now
-    mode = session.mode # ", "tba")
-    version_run = session.tags.get("vers_approach", "tba") 
+    if save is not None:
+        now = session.now
+        mode = session.mode # ", "tba")
+        version_run = session.tags.get("vers_approach", "tba") 
 
-    folder = os.getenv("PATH_EVALUATED")
-    f_path = Path(f"{folder}/coef_df/{now}_{mode}_{version_run}_coefs.csv")
-    coef_df.to_csv(f_path)
+        folder = os.getenv("PATH_EVALUATED")
+        f_path = Path(f"{folder}/coef_df/{now}_{mode}_{version_run}_coefs.csv")
+        coef_df.to_csv(f_path)
     
     return coef_df
-
-
-def threshold_sweep_analysis(model, X_train, y_train, metric):
-    # setup logger
-    exp_logger = get_experiment_logger()
-    event_logger = exp_logger.logger
-
-    y_val, y_proba_val = validation_split(model, X_train, y_train)
-    thresh_df = create_threshold_df(y_val, y_proba_val)
-    best_row = find_optimal_thresh(thresh_df, metric)
-    best_t = best_row["threshold"]
-
-    return best_t, thresh_df
 
 
 def evaluate_result_df(df_in, cols=None, metrics=None, save=False):
@@ -156,110 +141,13 @@ def evaluate_result_df(df_in, cols=None, metrics=None, save=False):
 
     if save:
         f_path = ph.create_save_path("cv_metrics", 
-                                    "_cv_metrics", 
+                                    "cv_metrics", 
                                     ".csv")
         result_df.to_csv(f_path)
         exp_logger.log_artifact(f_path)
 
     return result_df
 
-
-def validation_split(model, X_train, y_train):
-    random_state=session.parameters.get("random_state", 42)
-
-    X_train2, X_val, y_train2, y_val = train_test_split(
-                                            X_train, 
-                                            y_train, 
-                                            test_size=0.2, 
-                                            random_state=random_state, 
-                                            stratify=y_train
-                                                )
-    # train model on validation dataset
-    model.fit(X_train2, y_train2)
-    y_proba_val = model.predict_proba(X_val)[:, 1]
-
-    return y_val, y_proba_val
-
-
-def create_threshold_df(y_test, y_proba, thresholds=None):
-    # setup logger
-    exp_logger = get_experiment_logger()
-    event_logger = exp_logger.logger
-
-    event_logger.info("Starting 'threshold sweep analysis'")
-
-    # fallback for 'thresholds'
-    if thresholds is None:
-        thresholds = np.linspace(0.0, 1.0, 101)
-
-    # 
-    rows = []
-    for t in thresholds:
-        y_hat = (y_proba >= t).astype(int)
-
-        rows.append({
-            "threshold": float(t),
-            "n_test": int(len(y_test)),
-            "n_pos": int(y_test.sum()),
-            "pos_rate": float(y_test.mean()),
-            "precision": precision_score(y_test, y_hat, zero_division=0),
-            "recall": recall_score(y_test, y_hat, zero_division=0),
-            "f1": f1_score(y_test, y_hat, zero_division=0),
-            "f2": fbeta_score(y_test, y_hat, beta=2, zero_division=0),
-        })
-
-    # create thresh_df
-    thresh_df = pd.DataFrame(rows)
-
-    return thresh_df
-
-def find_optimal_thresh(thresh_df, metric="f2"):
-    # setup logger
-    exp_logger = get_experiment_logger()
-    event_logger = exp_logger.logger
-
-    if metric == "f2":
-        # best threshold by F2
-        best_row = thresh_df.loc[thresh_df["f2"].idxmax()]
-    
-    # logging
-    event_logger.info(
-        "Best threshold by %s: %.3f (F2=%.4f, Recall=%.3f, Precision=%.3f)",
-        metric,
-        best_row["threshold"],
-        best_row["f2"],
-        best_row["recall"],
-        best_row["precision"],
-        )
-
-    return best_row 
-
-# def find_min_thresh(target_metric, target_value, thresh_df):
-#     # setup logger
-#     exp_logger = get_experiment_logger()
-#     event_logger = exp_logger.logger
-
-#     # filter df
-#     candidates = thresh_df[thresh_df[f"{target_metric}"] >= target_value]
-    
-#     # find idx
-#     min_thresh = candidates["threshold"].idxmin()
-
-
-#     # logging
-#     event_logger.info("Lowest threshold for %s >= %s: %s", 
-#                       target_metric, 
-#                       target_value, 
-#                       min_thresh)
-    
-#     return 
-
-# print("Threshold for recall>=0.95:", choice)
-    
-    # [r for r in thresh_df.rows if r[f"{target_metric}"] >= target_value]
-
-
-    # min_thresh = min(candidates, key=lambda r: r["threshold"]) if candidates else None
 
 def encode_labels(df, pred_column):
     LABEL_TO_INT = {
@@ -314,6 +202,7 @@ def create_classification_report(y_true, y_pred):
                       report["escalation"]["recall"])
     
     return report
+
 
 def create_confusion_matrix(y_true, y_pred): 
     # setup logger
@@ -371,7 +260,7 @@ def evaluate_run(X_train, X_test, y_train, y_test, model, split_id="n.a."):
         }
 
         # 2. Threshold sweep (inner validation!)
-        best_t, thresh_data = threshold_sweep_analysis(
+        best_t, thresh_data = thresh.threshold_sweep_analysis(
                                                     model, 
                                                     X_train, 
                                                     y_train, 
@@ -408,7 +297,7 @@ def evaluate_run(X_train, X_test, y_train, y_test, model, split_id="n.a."):
             "f2": fbeta_score(y_test, y_hat_new, beta=2, zero_division=0),
         }
 
-        save_coef_df(model)
+        create_coef_df(model)
         
         return result, thresh_data, best_t_metrics
 

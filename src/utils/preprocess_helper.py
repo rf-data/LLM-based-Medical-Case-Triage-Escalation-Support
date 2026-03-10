@@ -85,50 +85,6 @@ def pretraining_checks(X_train, X_test,y_train, y_test):
     # cv = session.tags.get("cross_validate", None)
     # if split == True:
 
-def group_split(X, y, split_mode="stratify"):
-    exp_logger = get_experiment_logger()
-    event_logger = exp_logger.logger
-    
-    X, groups = make_feature_signature(X)
-                                                        
-    random = session.parameters.get("random_state", 42)
-
-    if split_mode == "group_shuffle":
-        n_splits = session.parameters.get("n_splits", 1)
-        test_size = session.parameters.get("test_size", 0.2)
-
-        event_logger.info("Apply GroupShuffleSplit(n_splits=%s, test_size=%s)", 
-                        n_splits, test_size)
-
-        group_split = GroupShuffleSplit(n_splits=n_splits, 
-                                test_size=test_size, 
-                                random_state=random)
-    
-    elif split_mode == "group_kfold":
-        n_splits = session.parameters.get("n_splits", 5)
-        # test_size = session.parameters.get("test_size", 0.2)
-
-        event_logger.info("Apply GroupKFold (n_splits=%s)", 
-                        n_splits)
-
-        group_split = GroupKFold(n_splits=n_splits)
-
-
-    for split_id, (train_idx, test_idx) in enumerate(group_split.split(X, y, groups)):
-        # correct id to make it more readible
-        split_id += 1
-        
-        event_logger.info("=== Split / Fold %s ===", split_id)
-
-        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-
-        # pre-training check
-        assert list(X_train.columns) == list(X_test.columns)
-        pretraining_checks(X_train, X_test, y_train, y_test)
-
-        yield split_id, X_train, X_test,y_train, y_test 
-
 
 # def group_stratify_split():
 

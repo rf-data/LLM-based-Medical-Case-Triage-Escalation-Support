@@ -21,6 +21,8 @@ import utils.path_helper as ph
 # -----------------
 # DATAFRAME METHODS
 # -----------------
+# (A) LOAD DFS
+# -----------------
 
 def load_dfs(paths: List[str |Path] | str | Path, 
              index_col: str | None = None):
@@ -34,6 +36,101 @@ def load_dfs(paths: List[str |Path] | str | Path,
 
     return dfs_dict
 
+
+def read_french_csv_smart(path: str) -> pd.DataFrame:
+    sep = detect_delimiter(path)
+    df = pd.read_csv(
+        path,
+        sep=sep,
+        encoding="latin1",
+        decimal=",",
+        engine="python",
+        on_bad_lines="skip",
+        # low_memory=False
+            )
+
+    return df
+
+
+def load_files_from_folder(folder):
+    folder = Path(folder)
+    
+    df_list = []
+    for file in folder.iterdir():
+        df = read_french_csv_smart(file)
+        df = fix_single_column_df(df)
+        df_re = df.rename(columns={"Accident_Id": "Num_Acc", "accident_id": "Num_Acc"})
+        
+        print("shape:\t", df_re.shape)
+        print("columns:\t", df_re.columns)
+        print("head:\n", df_re.head(3))
+        print()
+        df_list.append(df_re)
+        
+    return df_list
+
+
+def detect_delimiter(path: str) -> str:
+    with open(path, encoding="latin1") as f:
+        header = f.readline()
+    if "\t" in header:
+        return "\t"
+    elif ";" in header:
+        return ";"
+    elif "," in header:
+        return ","
+    else:
+        raise ValueError(f"Unknown delimiter in {path}")
+
+
+# -----------------
+# (B) REPAIR DFS
+# -----------------
+
+def fix_single_column_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df.shape[1] != 1:
+        return df
+        
+    header_raw = df.columns[0]
+    # print("cols to fix:\t", df.columns, "\n", col)
+
+    if "," in header_raw:
+        sep = ","
+        # return df[col].str.split(",", expand=True)
+    elif "\t" in header_raw:
+        sep = "\t"
+        # return df[col].str.split("\t", expand=True)
+    else:
+        # nothing to unpack
+        return df
+        # raise ValueError("Single column but no obvious delimiter")
+    
+    # Create header list
+    header = [h.strip() for h in header_raw.split(sep)]
+
+    # Split the ONLY data column into multiple columns
+    data = df.iloc[:, 0].astype(str).str.split(sep, expand=True)
+
+    # If file has trailing separators, data may have more cols than header
+    if data.shape[1] > len(header):
+        # keep only expected cols; drop the rest (usually empty)
+        data = data.iloc[:, :len(header)]
+        
+    elif data.shape[1] < len(header):
+        # data has fewer cols than header -> pad with NA
+        for _ in range(len(header) - data.shape[1]):
+            data[data.shape[1]] = pd.NA
+
+    data.columns = header
+
+    # Normalize common id column variants
+    data = data.rename(columns={"Accident_Id": "Num_Acc", "accident_id": "Num_Acc"})
+
+    return data
+
+# ---------------------
+# (C) DF PREVIEW / EDA
+# ---------------------
 
 def df_preview(data: dict, logger=None):
     """
@@ -60,6 +157,30 @@ def df_preview(data: dict, logger=None):
     return 
 
 
+def info_as_string(df):
+    buffer = io.StringIO()
+    df.info(buf=buffer)
+    return buffer.getvalue()
+
+#############################
+
+
+def sort_extract_df(df, sort_cols, extract_cols, k):
+    df_sort = df.sort_values(
+                            by=sort_cols,
+                            ascending=False,
+                                        )
+
+    topk_df = (
+            df_sort
+            .loc[:, extract_cols]
+            .head(k)
+            .reset_index(drop=True)
+                )
+    
+    return df_sort, topk_df
+
+
 def col_name_correct(df_input, split_value):
     df = df_input.copy()
 
@@ -75,10 +196,12 @@ def col_name_correct(df_input, split_value):
 
     return df.rename(columns=col_to_rename)
 
+
 def df_quick_check(df):
     print("[CHECK] SHAPE:\n", df.shape)
     print("\n[CHECK] HEAD:\n", df.head())
     return 
+
 
 def parse_list_str(x):
     if not isinstance(x, str) or x.strip() == "":
@@ -96,24 +219,6 @@ def parse_list_str(x):
         return [v.strip() for v in x.split(",") if v.strip()]
 
     return []
-
-# def parse_list_str(x):
-#     if not isinstance(x, str) or x.strip() == "":
-#         return []
-#     try:
-#         return ast.literal_eval(x)
-#     except Exception:
-#         return []
-    
-# def count_str_list_elements(x):
-#     x_new = parse_list_str(x)
-
-#     return len(x_new)
-
-def info_as_string(df):
-    buffer = io.StringIO()
-    df.info(buf=buffer)
-    return buffer.getvalue()
 
 
 def merge_dfs(df_list: List[pd.DataFrame], 

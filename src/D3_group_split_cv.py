@@ -1,10 +1,4 @@
 # imports'
-from sklearn.metrics import (roc_auc_score, 
-                             average_precision_score,
-                             precision_score, 
-                             recall_score, 
-                             fbeta_score,
-                             f1_score)
 # from sklearn.model_selection import GroupKFold
 from sklearn.base import clone
 from datetime import datetime
@@ -67,11 +61,11 @@ def group_split_cv(X, y, model):
     exp_logger.log_artifact(eval_result_path)
 
     # create + save thresh_df
-    thresh_df = pd.concat(all_thresh, ignore_index=True)
-    # thresh_df = pd.DataFrame(all_thresh)
-    thresh_path = ph.create_save_path(f"{split_mode}_cv", "thresh_df", ".csv")
-    thresh_df.to_csv(thresh_path)
-
+    if len(all_thresh) >= 1:
+        thresh_df = pd.concat(all_thresh, ignore_index=True)
+        thresh_path = ph.create_save_path(f"{split_mode}_cv", "thresh_df", ".csv")
+        thresh_df.to_csv(thresh_path)
+    
     # create + save best_t_result_df
     best_t_result_df = pd.DataFrame(best_t_results)
     best_t_result_path = ph.create_save_path(f"{split_mode}_cv", "best_t_results_df", ".csv")
