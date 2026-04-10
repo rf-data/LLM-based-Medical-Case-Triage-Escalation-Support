@@ -1,0 +1,16 @@
+[project]
+name = "llm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "click>=8.3.1",
+    "docker>=7.1.0",
+    "dvc>=3.65.0",
+    "ipykernel>=7.1.0",
+    "mlflow>=3.8.0",
+    "openai>=2.14.0",
+    "pandas>=2.3.3",
+    "scikit-learn>=1.8.0",
+]
