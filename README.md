@@ -102,7 +102,7 @@ Two complementary group-aware validation schemes are used:
 ---
 
 ## Project Structure (simplified)
-
+```
 src/
 ├── A_report_escalation.py
 ├── B1_rule_escalation.py
@@ -137,7 +137,7 @@ src/
 │ ├──  C1_logreg_base_single.py
 │ ├──  C2_logreg_base_group_shuffle.py
 │ └──  C3_logreg_base_group_kfold.py
-
+```
 ---
 
 ## Version History
